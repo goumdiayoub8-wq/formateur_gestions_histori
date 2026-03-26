@@ -1,0 +1,6 @@
+.env
+vendor
+storage/mail.log
+storage/logs
+storage/reports
+composer.phar
