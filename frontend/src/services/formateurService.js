@@ -121,7 +121,7 @@ const FormateurService = {
       method: 'post',
       data: payload,
     }).then((response) => {
-      invalidateApiCache('formateur:demandes');
+      invalidateApiCache('formateur:demandes-overview');
       invalidateApiCache('formateur:notifications');
       invalidateApiCache('dashboard:trainer-overview');
       return response;

@@ -1,5 +1,5 @@
 <?php
-function loadEnvironment($filePath) {
+function loadEnvironment($filePath, bool $overrideExisting = false) {
     static $loaded = [];
 
     if (isset($loaded[$filePath]) || !is_file($filePath)) {
@@ -20,6 +20,15 @@ function loadEnvironment($filePath) {
         $value = trim($value);
 
         if ($name === '') {
+            continue;
+        }
+
+        $hasExistingValue =
+            getenv($name) !== false ||
+            array_key_exists($name, $_ENV) ||
+            array_key_exists($name, $_SERVER);
+
+        if ($hasExistingValue && !$overrideExisting) {
             continue;
         }
 

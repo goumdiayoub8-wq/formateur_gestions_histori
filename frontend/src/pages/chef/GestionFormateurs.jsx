@@ -9,13 +9,12 @@ import {
 } from 'lucide-react';
 import FormateurService from '../../services/formateurService';
 import AffectationService from '../../services/affectationService';
-import PlanningService from '../../services/planningService';
 import DashboardService from '../../services/dashboardService';
 import AcademicConfigService from '../../services/academicConfigService';
 import {
   buildTrainerStatsMap,
   formatHours,
-  getAcademicWeekNumber,
+  getAcademicYearValue,
   getLoadTone,
   mapAlertsByTrainer,
   safeNumber,
@@ -42,6 +41,7 @@ const EMPTY_FORM = {
   nom: '',
   email: '',
   specialite: '',
+  weekly_hours: '',
   max_heures: 910,
   mot_de_passe: '',
 };
@@ -51,7 +51,7 @@ function buildStatusBadge(formateur, stats, alertsByTrainer) {
     safeNumber(formateur.max_heures) > 0
       ? safeNumber(stats.annual_hours) / safeNumber(formateur.max_heures)
       : 0;
-  const hasWeeklyOverload = safeNumber(stats.max_week_hours) > 26;
+  const hasWeeklyOverload = safeNumber(stats.max_week_hours) > 44;
   const trainerAlerts = alertsByTrainer[safeNumber(formateur.id)] || [];
 
   if (annualRatio > 1 || hasWeeklyOverload) {
@@ -110,7 +110,6 @@ export default function GestionFormateurs() {
   const [query, setQuery] = useState('');
   const [formateurs, setFormateurs] = useState([]);
   const [affectations, setAffectations] = useState([]);
-  const [planningEntries, setPlanningEntries] = useState([]);
   const [dashboardPayload, setDashboardPayload] = useState(null);
   const [academicConfig, setAcademicConfig] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -125,20 +124,17 @@ export default function GestionFormateurs() {
       const [
         formateursResponse,
         affectationsResponse,
-        planningResponse,
         dashboardResponse,
         academicConfigResponse,
       ] = await Promise.all([
         FormateurService.list(),
         AffectationService.list(),
-        PlanningService.getWeeklyPlanning(),
         DashboardService.getStats(),
         AcademicConfigService.getConfig(),
       ]);
 
       setFormateurs(Array.isArray(formateursResponse) ? formateursResponse : []);
       setAffectations(Array.isArray(affectationsResponse) ? affectationsResponse : []);
-      setPlanningEntries(Array.isArray(planningResponse) ? planningResponse : []);
       setDashboardPayload(dashboardResponse || {});
       setAcademicConfig(academicConfigResponse || null);
     } catch (loadError) {
@@ -156,8 +152,8 @@ export default function GestionFormateurs() {
     loadData();
   }, []);
 
-  const currentWeek = useMemo(
-    () => getAcademicWeekNumber(academicConfig),
+  const academicYear = useMemo(
+    () => getAcademicYearValue(academicConfig),
     [academicConfig],
   );
 
@@ -166,14 +162,10 @@ export default function GestionFormateurs() {
       buildTrainerStatsMap({
         formateurs,
         affectations,
-        planningEntries,
         dashboardStats: dashboardPayload?.formateurs || [],
-        academicYear: academicConfig?.academic_year_label
-          ? safeNumber(String(academicConfig.academic_year_label).slice(0, 4))
-          : null,
-        currentWeek,
+        academicYear,
       }),
-    [academicConfig, affectations, dashboardPayload, formateurs, planningEntries, currentWeek],
+    [academicYear, affectations, dashboardPayload, formateurs],
   );
 
   const alertsByTrainer = useMemo(
@@ -195,17 +187,21 @@ export default function GestionFormateurs() {
   }, [formateurs, query]);
 
   const totals = useMemo(() => {
-    return formateurs.reduce(
+    const dashboardRows = Array.isArray(dashboardPayload?.formateurs) ? dashboardPayload.formateurs : [];
+
+    return dashboardRows.reduce(
       (accumulator, formateur) => {
-        const stats = trainerStatsMap[safeNumber(formateur.id)] || {};
-        accumulator.annual += safeNumber(stats.annual_hours);
-        accumulator.weekly += safeNumber(stats.current_week_hours);
-        accumulator.alerts += (alertsByTrainer[safeNumber(formateur.id)] || []).length;
+        accumulator.annual += safeNumber(formateur.annual_hours);
+        accumulator.weekly += safeNumber(formateur.current_week_hours);
         return accumulator;
       },
-      { annual: 0, weekly: 0, alerts: 0 },
+      {
+        annual: 0,
+        weekly: 0,
+        alerts: Array.isArray(dashboardPayload?.alerts) ? dashboardPayload.alerts.length : 0,
+      },
     );
-  }, [alertsByTrainer, formateurs, trainerStatsMap]);
+  }, [dashboardPayload]);
 
   const openCreateModal = () => {
     setFormError('');
@@ -220,6 +216,11 @@ export default function GestionFormateurs() {
       nom: formateur.nom || '',
       email: formateur.email || '',
       specialite: formateur.specialite || '',
+      weekly_hours:
+        formateur.weekly_hours
+        || formateur.weekly_hours_target
+        || formateur.hours?.weekly_hours?.target
+        || '',
       max_heures: safeNumber(formateur.max_heures, 910),
       mot_de_passe: '',
     });
@@ -235,6 +236,10 @@ export default function GestionFormateurs() {
         nom: formValues.nom.trim(),
         email: formValues.email.trim(),
         specialite: formValues.specialite.trim(),
+        weekly_hours:
+          formValues.weekly_hours === '' || safeNumber(formValues.weekly_hours, 0) <= 0
+            ? null
+            : safeNumber(formValues.weekly_hours, 0),
         max_heures: safeNumber(formValues.max_heures, 910),
         ...(formValues.mot_de_passe ? { mot_de_passe: formValues.mot_de_passe } : {}),
       };
@@ -353,14 +358,16 @@ export default function GestionFormateurs() {
                     ? safeNumber(stats.annual_hours) / safeNumber(formateur.max_heures)
                     : 0;
                 const assignedModules = stats.assigned_modules || [];
-                const scorePresentation = getScorePresentation(formateur.questionnaire_percentage);
+                const scorePresentation = getScorePresentation(
+                  stats.questionnaire_percentage ?? formateur.questionnaire_percentage,
+                );
 
                 return (
                   <tr key={formateur.id} className="border-t border-[#e9eef7] align-top">
                     <td className="px-6 py-5">
                       <p className="text-lg font-semibold text-[#1b2941]">{formateur.nom}</p>
                       <p className="mt-1 text-sm text-[#7b8ea8]">
-                        Hebdo actuel {formatHours(stats.current_week_hours)} · Max {formatHours(stats.max_week_hours)}
+                        Hebdo actuel {formatHours(stats.current_week_hours)} · Cible {formatHours(formateur.weekly_hours || formateur.hours?.weekly_hours?.target || 0)} · Max {formatHours(stats.max_week_hours)}
                       </p>
                     </td>
                     <td className="px-6 py-5 text-base text-[#50637d]">{formateur.specialite}</td>
@@ -516,6 +523,21 @@ export default function GestionFormateurs() {
                 setFormValues((current) => ({ ...current, specialite: event.target.value }))
               }
               placeholder="Developpement web"
+            />
+          </ChefField>
+          <ChefField label="Heures / semaine">
+            <ChefInput
+              type="number"
+              min="0"
+              max="44"
+              step="0.5"
+              value={formValues.weekly_hours}
+              onChange={(event) =>
+                setFormValues((current) => ({
+                  ...current,
+                  weekly_hours: event.target.value,
+                }))
+              }
             />
           </ChefField>
           <ChefField label="Limite annuelle">

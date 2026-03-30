@@ -5,6 +5,35 @@ const API_BASE = (import.meta.env.VITE_API_BASE || '/api').trim();
 const inFlightRequests = new Map();
 const responseCache = new Map();
 
+function isAbsoluteUrl(url) {
+  return /^https?:\/\//i.test(url);
+}
+
+function normalizeApiBase(base) {
+  const trimmed = base.trim();
+
+  if (!trimmed) {
+    return '/api';
+  }
+
+  return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+}
+
+export function buildApiUrl(url = '') {
+  if (!url) {
+    return normalizeApiBase(API_BASE);
+  }
+
+  if (isAbsoluteUrl(url)) {
+    return url;
+  }
+
+  const base = normalizeApiBase(API_BASE);
+  const path = url.startsWith('/') ? url : `/${url}`;
+
+  return `${base}${path}`;
+}
+
 export class ApiError extends Error {
   constructor(message, options = {}) {
     super(message);
@@ -16,7 +45,6 @@ export class ApiError extends Error {
 }
 
 const api = axios.create({
-  baseURL: API_BASE,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -136,6 +164,10 @@ export async function apiRequest(config, options = {}) {
   const effectiveCacheKey = cacheKey || dedupeKey;
   const storageKey =
     effectiveCacheKey && cacheTtlMs > 0 ? getCacheStorageKey(effectiveCacheKey, raw) : '';
+  const requestConfig = {
+    ...config,
+    url: typeof config?.url === 'string' ? buildApiUrl(config.url) : config?.url,
+  };
 
   if (storageKey) {
     const cachedValue = readCachedValue(storageKey);
@@ -150,7 +182,7 @@ export async function apiRequest(config, options = {}) {
 
   const requestPromise = (async () => {
     try {
-      const response = await api(config);
+      const response = await api(requestConfig);
       const payload = response?.data ?? null;
 
       if (payload?.status === 'error' || payload?.success === false) {

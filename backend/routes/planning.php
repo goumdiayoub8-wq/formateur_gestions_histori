@@ -84,6 +84,12 @@ if ($action === 'stats' && $method === 'GET') {
     return;
 }
 
+if ($action === 'session-status' && $method === 'POST') {
+    requireAuth();
+    $controller->updateSessionStatus();
+    return;
+}
+
 if ($action === 'entry-decision' && $method === 'POST') {
     $controller->createEntryDecisionRequest();
     return;

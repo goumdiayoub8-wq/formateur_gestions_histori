@@ -1,4 +1,7 @@
-export const ACADEMIC_MAX_WEEKS = 35;
+export const SYSTEM_WEEK_MIN = 1;
+export const SYSTEM_WEEK_MAX = 44;
+export const ACADEMIC_WEEKS = 35;
+export const VALIDATION_START_WEEK = 26;
 
 function toDate(value) {
   if (!value) {
@@ -44,7 +47,7 @@ export function getCurrentWeek(startDate, currentDate = new Date()) {
     return 0;
   }
 
-  return Math.floor(diffDays / 7) + 1;
+  return Math.max(SYSTEM_WEEK_MIN, Math.min(SYSTEM_WEEK_MAX, Math.floor(diffDays / 7) + 1));
 }
 
 export function getAcademicWeekCount(startDate, endDate) {
@@ -56,14 +59,14 @@ export function getAcademicWeekCount(startDate, endDate) {
   }
 
   const diffDays = Math.floor((end.getTime() - start.getTime()) / 86400000);
-  return Math.min(ACADEMIC_MAX_WEEKS, Math.floor(diffDays / 7) + 1);
+  return Math.min(SYSTEM_WEEK_MAX, Math.floor(diffDays / 7) + 1);
 }
 
 export function getAcademicWeekRange(startDate, weekNumber, locale = 'fr-FR') {
   const start = startOfDay(startDate);
   const week = Number(weekNumber || 0);
 
-  if (!start || week < 1) {
+  if (!start || week < SYSTEM_WEEK_MIN || week > SYSTEM_WEEK_MAX) {
     return '';
   }
 

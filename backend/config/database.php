@@ -1,23 +1,114 @@
 <?php
 
 require_once __DIR__ . '/env.php';
+require_once __DIR__ . '/../core/AppLogger.php';
+require_once __DIR__ . '/../core/HttpException.php';
 
-loadEnvironment(__DIR__ . '/../.env');
+$envPath = __DIR__ . '/../.env';
+$envExamplePath = __DIR__ . '/../.env.example';
+loadEnvironment($envPath);
+
+if (!is_file($envPath)) {
+    loadEnvironment($envExamplePath);
+}
 
 const APP_BOOTSTRAP_VERSION = '2026-03-25-hardening';
 
+function readLegacyDatabaseConfig(string $filePath): array
+{
+    if (!is_file($filePath)) {
+        return [];
+    }
+
+    $content = file_get_contents($filePath);
+    if ($content === false || trim($content) === '') {
+        return [];
+    }
+
+    $config = [];
+
+    foreach (['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASS', 'DB_PASSWORD'] as $key) {
+        $pattern = sprintf(
+            '/define\(\s*[\'"]%s[\'"]\s*,\s*([\'"])(.*?)\1\s*\)/s',
+            preg_quote($key, '/')
+        );
+
+        if (preg_match($pattern, $content, $matches) === 1) {
+            $config[$key] = stripcslashes($matches[2]);
+        }
+    }
+
+    return $config;
+}
+
+function readEnvironmentSetting(string $name): array
+{
+    $value = getenv($name);
+    if ($value !== false) {
+        return ['found' => true, 'value' => strval($value)];
+    }
+
+    if (array_key_exists($name, $_ENV)) {
+        return ['found' => true, 'value' => strval($_ENV[$name])];
+    }
+
+    if (array_key_exists($name, $_SERVER)) {
+        return ['found' => true, 'value' => strval($_SERVER[$name])];
+    }
+
+    return ['found' => false, 'value' => ''];
+}
+
+function databaseSetting(string $envName, array $legacyNames, string $default, array $legacyConfig): string
+{
+    $envSetting = readEnvironmentSetting($envName);
+    if ($envSetting['found']) {
+        return $envSetting['value'];
+    }
+
+    foreach ($legacyNames as $legacyName) {
+        if (array_key_exists($legacyName, $legacyConfig)) {
+            return strval($legacyConfig[$legacyName]);
+        }
+    }
+
+    return $default;
+}
+
 function createServerConnection(string $host, string $port, string $username, string $password): PDO
 {
-    return new PDO(
-        sprintf('mysql:host=%s;port=%s;charset=utf8mb4', $host, $port),
-        $username,
-        $password,
-        [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES => false,
-        ]
-    );
+    try {
+        return new PDO(
+            sprintf('mysql:host=%s;port=%s;charset=utf8mb4', $host, $port),
+            $username,
+            $password,
+            [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false,
+            ]
+        );
+    } catch (PDOException $exception) {
+        AppLogger::error('Database connection failed', [
+            'host' => $host,
+            'port' => $port,
+            'database' => null,
+            'username' => $username,
+            'message' => $exception->getMessage(),
+        ]);
+
+        throw new HttpException(
+            503,
+            'Connexion a la base de donnees impossible. Verifiez backend/.env ou backend/config/config.php.',
+            [
+                'config_files' => [
+                    'backend/.env',
+                    'backend/.env.example',
+                    'backend/config/config.php',
+                ],
+            ]
+        );
+    }
 }
 
 function ensureDatabaseExists(PDO $serverConnection, string $database): void
@@ -108,6 +199,45 @@ function ensureRequestThrottlesTable(PDO $connection): void
     );
 }
 
+function columnExists(PDO $connection, string $table, string $column): bool
+{
+    $statement = $connection->query(sprintf(
+        "SHOW COLUMNS FROM `%s` LIKE %s",
+        str_replace('`', '``', $table),
+        $connection->quote($column)
+    ));
+
+    return (bool) $statement->fetch();
+}
+
+function ensurePlanningSubmissionSnapshotColumns(PDO $connection): void
+{
+    if (!tableExists($connection, 'planning_submissions')) {
+        return;
+    }
+
+    if (!columnExists($connection, 'planning_submissions', 'snapshot_entries')) {
+        $connection->exec(
+            'ALTER TABLE planning_submissions
+             ADD COLUMN snapshot_entries LONGTEXT DEFAULT NULL AFTER decision_note'
+        );
+    }
+
+    if (!columnExists($connection, 'planning_submissions', 'snapshot_total_hours')) {
+        $connection->exec(
+            'ALTER TABLE planning_submissions
+             ADD COLUMN snapshot_total_hours DECIMAL(6,2) DEFAULT NULL AFTER snapshot_entries'
+        );
+    }
+
+    if (!columnExists($connection, 'planning_submissions', 'snapshot_captured_at')) {
+        $connection->exec(
+            'ALTER TABLE planning_submissions
+             ADD COLUMN snapshot_captured_at DATETIME DEFAULT NULL AFTER snapshot_total_hours'
+        );
+    }
+}
+
 function getSystemMeta(PDO $connection, string $key): ?string
 {
     $statement = $connection->prepare(
@@ -159,33 +289,52 @@ function getDatabaseConnection(): PDO
         return $connection;
     }
 
-    $host = getenv('DB_HOST') ?: '127.0.0.1';
-    $port = getenv('DB_PORT') ?: '3306';
-    $database = getenv('DB_NAME') ?: 'gestion_formateurs';
-    $username = getenv('DB_USER') ?: 'root';
-    $password = getenv('DB_PASSWORD') !== false ? getenv('DB_PASSWORD') : '';
+    $legacyConfig = readLegacyDatabaseConfig(__DIR__ . '/config.php');
+
+    $host = databaseSetting('DB_HOST', ['DB_HOST'], '127.0.0.1', $legacyConfig);
+    $port = databaseSetting('DB_PORT', ['DB_PORT'], '3306', $legacyConfig);
+    $database = databaseSetting('DB_NAME', ['DB_NAME'], 'gestion_formateurs', $legacyConfig);
+    $username = databaseSetting('DB_USER', ['DB_USER'], 'root', $legacyConfig);
+    $password = databaseSetting('DB_PASSWORD', ['DB_PASSWORD', 'DB_PASS'], '', $legacyConfig);
 
     $serverConnection = createServerConnection($host, $port, $username, $password);
     ensureDatabaseExists($serverConnection, $database);
 
-    $connection = new PDO(
-        sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4', $host, $port, $database),
-        $username,
-        $password,
-        [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES => false,
-        ]
-    );
+    try {
+        $connection = new PDO(
+            sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4', $host, $port, $database),
+            $username,
+            $password,
+            [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false,
+            ]
+        );
+    } catch (PDOException $exception) {
+        AppLogger::error('Database selection failed', [
+            'host' => $host,
+            'port' => $port,
+            'database' => $database,
+            'username' => $username,
+            'message' => $exception->getMessage(),
+        ]);
+
+        throw new HttpException(
+            503,
+            'La connexion MySQL fonctionne mais la base de donnees demandee est inaccessible. Verifiez DB_NAME dans backend/.env ou backend/config/config.php.'
+        );
+    }
 
     ensureSystemMetaTable($connection);
     ensureRequestThrottlesTable($connection);
+    ensurePlanningSubmissionSnapshotColumns($connection);
 
     if (!hasRequiredTables($connection)) {
         bootstrapSchema($connection);
         ensureSystemMetaTable($connection);
         ensureRequestThrottlesTable($connection);
+        ensurePlanningSubmissionSnapshotColumns($connection);
         setSystemMeta($connection, 'app_bootstrap_version', APP_BOOTSTRAP_VERSION);
     } elseif (getSystemMeta($connection, 'app_bootstrap_version') === null) {
         setSystemMeta($connection, 'app_bootstrap_version', APP_BOOTSTRAP_VERSION);

@@ -3,7 +3,12 @@
 require_once __DIR__ . '/../config/env.php';
 require_once __DIR__ . '/../core/AppLogger.php';
 
-loadEnvironment(__DIR__ . '/../.env');
+$envPath = __DIR__ . '/../.env';
+loadEnvironment($envPath);
+
+if (!is_file($envPath)) {
+    loadEnvironment(__DIR__ . '/../.env.example');
+}
 
 class MailService
 {
@@ -11,7 +16,7 @@ class MailService
 
     public function __construct()
     {
-        $this->frontendUrl = rtrim(getenv('APP_FRONTEND_URL') ?: 'http://localhost:3000', '/');
+        $this->frontendUrl = rtrim(getenv('APP_FRONTEND_URL') ?: 'http://localhost:5173', '/');
     }
 
     public function resetPasswordUrl(string $token): string

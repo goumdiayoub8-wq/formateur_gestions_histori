@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/../core/helpers.php';
+
 class ModuleRepository
 {
     private PDO $db;
@@ -173,7 +175,7 @@ class ModuleRepository
         $stmt = $this->db->prepare(
             'SELECT
                 (SELECT COUNT(*) FROM affectations WHERE module_id = :affectations_module_id) +
-                (SELECT COUNT(*) FROM planning WHERE module_id = :planning_module_id) AS total_dependencies'
+                (SELECT COUNT(*) FROM planning_sessions WHERE module_id = :planning_module_id) AS total_dependencies'
         );
         $stmt->execute([
             'affectations_module_id' => $id,
@@ -209,6 +211,8 @@ class ModuleRepository
     public function progressList(array $filters = []): array
     {
         $annee = intval($filters['annee'] ?? date('Y'));
+        $completedSessionsCondition = completedPlanningSessionCondition('s');
+        $completedHoursExpression = completedPlanningSessionHoursExpression('s');
         $sql = 'SELECT
                     m.id,
                     COALESCE(m.code, CONCAT("M", LPAD(m.id, 3, "0"))) AS code,
@@ -232,8 +236,9 @@ class ModuleRepository
                     COALESCE(GROUP_CONCAT(DISTINCT f.nom ORDER BY f.nom SEPARATOR " • "), "Non affecte") AS formateur_nom
                 FROM modules m
                 LEFT JOIN (
-                    SELECT module_id, SUM(heures) AS completed_hours
-                    FROM planning
+                    SELECT module_id, ' . $completedHoursExpression . ' AS completed_hours
+                    FROM planning_sessions s
+                    WHERE ' . $completedSessionsCondition . '
                     GROUP BY module_id
                 ) pl ON pl.module_id = m.id
                 LEFT JOIN module_groupes mg ON mg.module_id = m.id

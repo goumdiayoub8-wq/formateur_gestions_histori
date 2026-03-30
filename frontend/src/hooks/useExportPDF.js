@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 
 const DAY_LABELS = {
@@ -11,11 +12,27 @@ const DAY_LABELS = {
   7: 'Dimanche',
 };
 
-function wait(ms) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
+let pdfDependenciesPromise = null;
+let excelDependenciesPromise = null;
+const DEFAULT_EXPORT_STAGE = 'idle';
+
+function waitForNextFrame() {
+  return new Promise((resolve) => {
+    if (typeof window.requestAnimationFrame !== 'function') {
+      window.setTimeout(resolve, 16);
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(resolve);
+    });
+  });
 }
 
-let pdfDependenciesPromise = null;
+function getCanvasScale() {
+  const deviceScale = Number(window.devicePixelRatio || 1);
+  return Math.max(1.2, Math.min(deviceScale, 1.5));
+}
 
 function getPdfDependencies() {
   if (!pdfDependenciesPromise) {
@@ -31,6 +48,16 @@ function getPdfDependencies() {
   }
 
   return pdfDependenciesPromise;
+}
+
+function getExcelDependencies() {
+  if (!excelDependenciesPromise) {
+    excelDependenciesPromise = import('exceljs').then((module) => ({
+      ExcelJS: module.default || module,
+    }));
+  }
+
+  return excelDependenciesPromise;
 }
 
 function slugify(value) {
@@ -108,8 +135,21 @@ async function waitForAssets(container) {
         }),
     ),
   );
+  await Promise.all(
+    images.map(async (image) => {
+      if (typeof image.decode !== 'function') {
+        return;
+      }
 
-  await wait(80);
+      try {
+        await image.decode();
+      } catch (error) {
+        void error;
+      }
+    }),
+  );
+
+  await waitForNextFrame();
 }
 
 async function renderTrainerCanvas({ trainer, weekNumber, weekRange, academicYearLabel, generatedAtLabel, logoSrc }) {
@@ -124,31 +164,33 @@ async function renderTrainerCanvas({ trainer, weekNumber, weekRange, academicYea
   document.body.appendChild(host);
 
   const root = createRoot(host);
-  root.render(
-    React.createElement(PlanningPdfDocument, {
-      trainer,
-      weekNumber,
-      weekRange,
-      academicYearLabel,
-      generatedAtLabel,
-      logoSrc,
-    }),
-  );
+  try {
+    flushSync(() => {
+      root.render(
+        React.createElement(PlanningPdfDocument, {
+          trainer,
+          weekNumber,
+          weekRange,
+          academicYearLabel,
+          generatedAtLabel,
+          logoSrc,
+        }),
+      );
+    });
 
-  await wait(60);
-  await waitForAssets(host);
+    await waitForAssets(host);
 
-  const canvas = await html2canvas(host.firstElementChild || host, {
-    scale: 2,
-    backgroundColor: '#ffffff',
-    useCORS: true,
-    logging: false,
-  });
-
-  root.unmount();
-  document.body.removeChild(host);
-
-  return canvas;
+    return await html2canvas(host.firstElementChild || host, {
+      scale: getCanvasScale(),
+      backgroundColor: '#ffffff',
+      useCORS: true,
+      imageTimeout: 0,
+      logging: false,
+    });
+  } finally {
+    root.unmount();
+    document.body.removeChild(host);
+  }
 }
 
 function addCanvasPages(doc, canvas, forceNewPage = false) {
@@ -160,7 +202,7 @@ function addCanvasPages(doc, canvas, forceNewPage = false) {
   const availableWidth = pageWidth - marginX * 2;
   const availableHeight = pageHeight - marginTop - footerSpace;
   const imageHeight = (canvas.height * availableWidth) / canvas.width;
-  const imageData = canvas.toDataURL('image/png');
+  const imageData = canvas.toDataURL('image/jpeg', 0.9);
 
   if (forceNewPage) {
     doc.addPage();
@@ -168,13 +210,13 @@ function addCanvasPages(doc, canvas, forceNewPage = false) {
 
   let heightLeft = imageHeight;
   let yPosition = marginTop;
-  doc.addImage(imageData, 'PNG', marginX, yPosition, availableWidth, imageHeight, undefined, 'FAST');
+  doc.addImage(imageData, 'JPEG', marginX, yPosition, availableWidth, imageHeight, undefined, 'FAST');
   heightLeft -= availableHeight;
 
   while (heightLeft > 0) {
     doc.addPage();
     yPosition = marginTop - (imageHeight - heightLeft);
-    doc.addImage(imageData, 'PNG', marginX, yPosition, availableWidth, imageHeight, undefined, 'FAST');
+    doc.addImage(imageData, 'JPEG', marginX, yPosition, availableWidth, imageHeight, undefined, 'FAST');
     heightLeft -= availableHeight;
   }
 }
@@ -195,6 +237,26 @@ function decoratePages(doc, exportDateLabel) {
   }
 }
 
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function fitWorksheetToImage(worksheet, widthPx, heightPx) {
+  const columnCount = Math.max(20, Math.ceil(widthPx / 64));
+  const rowCount = Math.max(30, Math.ceil(heightPx / 20));
+
+  worksheet.columns = Array.from({ length: columnCount }, () => ({ width: 10 }));
+
+  for (let rowIndex = 1; rowIndex <= rowCount; rowIndex += 1) {
+    worksheet.getRow(rowIndex).height = 15;
+  }
+}
+
 function normalizeTrainer(trainer) {
   const rawEntries = Array.isArray(trainer?.entries) ? trainer.entries : [];
   const entries = rawEntries.map(normalizeEntry);
@@ -208,8 +270,28 @@ function normalizeTrainer(trainer) {
   };
 }
 
+function getExportStatusLabel(stage) {
+  switch (stage) {
+    case 'preparing':
+      return 'Preparation du PDF...';
+    case 'rendering':
+      return 'Mise en page du planning...';
+    case 'assembling':
+      return 'Assemblage du document...';
+    case 'saving':
+      return 'Telechargement du PDF...';
+    default:
+      return 'Exporter le planning PDF';
+  }
+}
+
 export default function useExportPDF() {
   const [exporting, setExporting] = useState(false);
+  const [exportStage, setExportStage] = useState(DEFAULT_EXPORT_STAGE);
+
+  useEffect(() => {
+    void getPdfDependencies();
+  }, []);
 
   const exportSinglePlanning = async ({
     trainer,
@@ -219,6 +301,7 @@ export default function useExportPDF() {
     filename,
   }) => {
     setExporting(true);
+    setExportStage('preparing');
 
     try {
       const normalizedTrainer = normalizeTrainer(trainer);
@@ -229,6 +312,7 @@ export default function useExportPDF() {
       });
       const { jsPDF } = await getPdfDependencies();
       const logoSrc = `${window.location.origin}/logo192.png`;
+      setExportStage('rendering');
       const canvas = await renderTrainerCanvas({
         trainer: normalizedTrainer,
         weekNumber,
@@ -238,12 +322,15 @@ export default function useExportPDF() {
         logoSrc,
       });
 
+      setExportStage('assembling');
       const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
       addCanvasPages(doc, canvas, false);
       decoratePages(doc, exportDateLabel);
+      setExportStage('saving');
       doc.save(filename || `planning-${slugify(normalizedTrainer.name)}-semaine-${weekNumber || 'courante'}.pdf`);
     } finally {
       setExporting(false);
+      setExportStage(DEFAULT_EXPORT_STAGE);
     }
   };
 
@@ -255,6 +342,7 @@ export default function useExportPDF() {
     filename,
   }) => {
     setExporting(true);
+    setExportStage('preparing');
 
     try {
       const exportDateLabel = new Date().toLocaleDateString('fr-FR');
@@ -269,6 +357,7 @@ export default function useExportPDF() {
 
       for (let index = 0; index < normalizedTrainers.length; index += 1) {
         const trainer = normalizedTrainers[index];
+        setExportStage('rendering');
         const canvas = await renderTrainerCanvas({
           trainer,
           weekNumber,
@@ -277,19 +366,96 @@ export default function useExportPDF() {
           generatedAtLabel,
           logoSrc,
         });
+        setExportStage('assembling');
         addCanvasPages(doc, canvas, index > 0);
       }
 
       decoratePages(doc, exportDateLabel);
+      setExportStage('saving');
       doc.save(filename || `planning-tous-formateurs-semaine-${weekNumber || 'courante'}.pdf`);
     } finally {
       setExporting(false);
+      setExportStage(DEFAULT_EXPORT_STAGE);
+    }
+  };
+
+  const exportAllPlanningsExcel = async ({
+    trainers,
+    weekNumber,
+    weekRange,
+    academicYearLabel,
+    filename,
+  }) => {
+    setExporting(true);
+    setExportStage('preparing');
+
+    try {
+      const generatedAtLabel = new Date().toLocaleString('fr-FR', {
+        dateStyle: 'short',
+        timeStyle: 'short',
+      });
+      const logoSrc = `${window.location.origin}/logo192.png`;
+      const { ExcelJS } = await getExcelDependencies();
+      const normalizedTrainers = (Array.isArray(trainers) ? trainers : []).map(normalizeTrainer);
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'CMC Casablanca';
+      workbook.created = new Date();
+
+      for (let index = 0; index < normalizedTrainers.length; index += 1) {
+        const trainer = normalizedTrainers[index];
+        setExportStage('rendering');
+        const canvas = await renderTrainerCanvas({
+          trainer,
+          weekNumber,
+          weekRange,
+          academicYearLabel,
+          generatedAtLabel,
+          logoSrc,
+        });
+
+        setExportStage('assembling');
+        const imageId = workbook.addImage({
+          base64: canvas.toDataURL('image/png'),
+          extension: 'png',
+        });
+        const safeTitle = (trainer.name || `Planning ${index + 1}`).slice(0, 31) || `Planning ${index + 1}`;
+        const worksheet = workbook.addWorksheet(safeTitle, {
+          views: [{ showGridLines: false }],
+          pageSetup: {
+            orientation: 'landscape',
+            paperSize: 9,
+            fitToPage: true,
+            fitToWidth: 1,
+            fitToHeight: 1,
+          },
+        });
+
+        fitWorksheetToImage(worksheet, canvas.width, canvas.height);
+        worksheet.addImage(imageId, {
+          tl: { col: 0, row: 0 },
+          ext: { width: canvas.width, height: canvas.height },
+          editAs: 'oneCell',
+        });
+      }
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+
+      setExportStage('saving');
+      downloadBlob(blob, filename || `planning-tous-formateurs-semaine-${weekNumber || 'courante'}.xlsx`);
+    } finally {
+      setExporting(false);
+      setExportStage(DEFAULT_EXPORT_STAGE);
     }
   };
 
   return {
     exporting,
+    exportStage,
+    exportStatusLabel: getExportStatusLabel(exportStage),
     exportSinglePlanning,
     exportAllPlannings,
+    exportAllPlanningsExcel,
   };
 }

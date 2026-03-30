@@ -29,4 +29,14 @@ if ($method === 'POST' && $action === 'generate-module-progress') {
     return;
 }
 
+if ($method === 'POST' && $action === 'generate-assignment-coverage') {
+    $controller->generateAssignmentCoverage();
+    return;
+}
+
+if ($method === 'POST' && $action === 'generate-validation-status') {
+    $controller->generateValidationStatus();
+    return;
+}
+
 throw new NotFoundException('Route reports non trouvee.');

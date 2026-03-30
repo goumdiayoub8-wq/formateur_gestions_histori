@@ -17,6 +17,102 @@ class QuestionnaireService
         $this->formateurs = new FormateurRepository($db);
     }
 
+    private function normalizeStoredRating($value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $normalized = strtolower(trim((string) $value));
+        if (in_array($normalized, ['yes', 'oui', 'true'], true)) {
+            return 5;
+        }
+
+        if (in_array($normalized, ['no', 'non', 'false'], true)) {
+            return 1;
+        }
+
+        if (!is_numeric($value)) {
+            return null;
+        }
+
+        return max(1, min(5, intval(round(floatval($value)))));
+    }
+
+    private function inferSkills(string $text): array
+    {
+        $normalized = strtolower($text);
+        $skills = [];
+
+        if (str_contains($normalized, 'contenu') || str_contains($normalized, 'module')) {
+            $skills[] = 'Pedagogie';
+        }
+
+        if (str_contains($normalized, 'explique') || str_contains($normalized, 'support')) {
+            $skills[] = 'Communication';
+        }
+
+        if (str_contains($normalized, 'interagit') || str_contains($normalized, 'constructive')) {
+            $skills[] = 'Soft Skills';
+        }
+
+        if (str_contains($normalized, 'horaire') || str_contains($normalized, 'planning')) {
+            $skills[] = 'Organisation';
+        }
+
+        if ($skills === []) {
+            $skills[] = 'Soft Skills';
+        }
+
+        return array_values(array_unique($skills));
+    }
+
+    private function buildModelDefinition(array $question, int $index, array $globalScores, array $existingAnswers): array
+    {
+        $raw = trim((string) ($question['question_text'] ?? ''));
+        $decoded = json_decode($raw, true);
+        $name = $raw;
+        $description = 'Evaluation simple de ce modele pedagogique.';
+        $skills = $this->inferSkills($raw);
+
+        if (is_array($decoded) && !empty($decoded['name'])) {
+            $name = trim((string) $decoded['name']);
+            $description = trim((string) ($decoded['description'] ?? $description));
+            $skills = is_array($decoded['skills'] ?? null) && $decoded['skills'] !== []
+                ? array_values(array_filter(array_map(static fn($skill) => trim((string) $skill), $decoded['skills'])))
+                : $skills;
+        }
+
+        if ($name === '') {
+            $name = 'Modele ' . ($index + 1);
+        }
+
+        $globalScore = $globalScores[intval($question['id'])] ?? [
+            'average_rating' => null,
+            'percentage' => null,
+            'submissions_count' => 0,
+        ];
+        $currentScore = $existingAnswers[(string) intval($question['id'])] ?? null;
+
+        return [
+            'id' => intval($question['id']),
+            'questionnaire_id' => intval($question['questionnaire_id']),
+            'name' => $name,
+            'description' => $description,
+            'skills' => $skills,
+            'question_text' => $name,
+            'type' => 'rating',
+            'weight' => round(floatval($question['weight'] ?? 0), 2),
+            'scale' => [
+                'min' => 1,
+                'max' => 5,
+            ],
+            'score' => $currentScore,
+            'global_score' => $globalScore,
+            'created_at' => $question['created_at'] ?? null,
+        ];
+    }
+
     public function getQuestions(?int $formateurId = null): array
     {
         $questionnaire = $this->questionnaires->getActiveQuestionnaire();
@@ -25,16 +121,16 @@ class QuestionnaireService
             throw new NotFoundException('Aucun questionnaire actif n est disponible.');
         }
 
-        $questions = array_map(static function (array $question): array {
-            return [
-                'id' => intval($question['id']),
-                'questionnaire_id' => intval($question['questionnaire_id']),
-                'question_text' => $question['question_text'],
-                'type' => $question['type'],
-                'weight' => round(floatval($question['weight'] ?? 0), 2),
-                'created_at' => $question['created_at'],
+        $questions = $this->questionnaires->getQuestions(intval($questionnaire['id']));
+        $globalScores = [];
+        foreach ($this->questionnaires->getGlobalScoresByQuestionnaire(intval($questionnaire['id'])) as $row) {
+            $averageRating = $row['average_rating'] !== null ? round(floatval($row['average_rating']), 2) : null;
+            $globalScores[intval($row['question_id'])] = [
+                'average_rating' => $averageRating,
+                'percentage' => $averageRating !== null ? round(($averageRating / 5) * 100, 2) : null,
+                'submissions_count' => intval($row['submissions_count'] ?? 0),
             ];
-        }, $this->questionnaires->getQuestions(intval($questionnaire['id'])));
+        }
 
         $score = null;
         $existingAnswers = [];
@@ -44,9 +140,13 @@ class QuestionnaireService
             $score = $this->formatScore($this->questionnaires->getScoreByFormateur($formateurId));
 
             foreach ($this->questionnaires->getAnswersByFormateur($formateurId, intval($questionnaire['id'])) as $answer) {
-                $existingAnswers[(string) intval($answer['question_id'])] = $answer['value'];
+                $existingAnswers[(string) intval($answer['question_id'])] = $this->normalizeStoredRating($answer['value']);
             }
         }
+
+        $models = array_map(function (array $question, int $index) use ($globalScores, $existingAnswers): array {
+            return $this->buildModelDefinition($question, $index, $globalScores, $existingAnswers);
+        }, $questions, array_keys($questions));
 
         return [
             'questionnaire' => [
@@ -54,7 +154,8 @@ class QuestionnaireService
                 'title' => $questionnaire['title'],
                 'created_at' => $questionnaire['created_at'],
             ],
-            'questions' => $questions,
+            'questions' => $models,
+            'models' => $models,
             'score' => $score,
             'can_submit' => $formateurId === null ? true : !$this->questionnaires->hasSubmitted($formateurId),
             'existing_answers' => $existingAnswers,
@@ -76,7 +177,7 @@ class QuestionnaireService
 
         $questions = $this->questionnaires->getQuestions(intval($questionnaire['id']));
         if (count($questions) === 0) {
-            throw new ValidationException('Le questionnaire ne contient aucune question.');
+            throw new ValidationException('Le questionnaire ne contient aucun modele.');
         }
 
         $normalizedAnswers = $this->normalizeAnswers($questions, $answers);
@@ -88,10 +189,6 @@ class QuestionnaireService
             foreach ($questions as $question) {
                 $questionId = intval($question['id']);
                 $value = $normalizedAnswers[$questionId] ?? '';
-
-                if ($question['type'] === 'text' && trim((string) $value) === '') {
-                    continue;
-                }
 
                 $this->questionnaires->createAnswer($formateurId, $questionId, (string) $value);
             }
@@ -124,21 +221,10 @@ class QuestionnaireService
         foreach ($questions as $question) {
             $questionId = intval($question['id']);
             $weight = round(max(0, floatval($question['weight'] ?? 0)), 2);
-            $type = (string) ($question['type'] ?? '');
-            $value = $answers[$questionId] ?? null;
+            $numericValue = floatval($answers[$questionId] ?? 0);
 
-            if ($type === 'rating') {
-                $numericValue = intval($value);
-                $totalScore += $numericValue * $weight;
-                $maxScore += 5 * $weight;
-                continue;
-            }
-
-            if ($type === 'yes/no') {
-                $numericValue = $this->normalizeYesNoValue($value) === 'yes' ? 1 : 0;
-                $totalScore += $numericValue * $weight;
-                $maxScore += 1 * $weight;
-            }
+            $totalScore += $numericValue * $weight;
+            $maxScore += 5 * $weight;
         }
 
         $percentage = $maxScore > 0 ? round(($totalScore / $maxScore) * 100, 2) : 0.0;
@@ -199,11 +285,10 @@ class QuestionnaireService
         }
 
         foreach ($questionMap as $questionId => $question) {
-            $type = (string) ($question['type'] ?? '');
             $value = $normalized[$questionId] ?? null;
             $isEmpty = $value === null || trim((string) $value) === '';
 
-            if ($type !== 'text' && $isEmpty) {
+            if ($isEmpty) {
                 throw new ValidationException('Merci de repondre a toutes les questions obligatoires.');
             }
         }
@@ -213,43 +298,16 @@ class QuestionnaireService
 
     private function normalizeQuestionValue(array $question, $value): ?string
     {
-        $type = (string) ($question['type'] ?? '');
-
-        if ($type === 'rating') {
-            if ($value === null || $value === '') {
-                return null;
-            }
-
-            if (filter_var($value, FILTER_VALIDATE_INT) === false) {
-                throw new ValidationException('Les reponses rating doivent etre comprises entre 1 et 5.');
-            }
-
-            $numericValue = intval($value);
-            if ($numericValue < 1 || $numericValue > 5) {
-                throw new ValidationException('Les reponses rating doivent etre comprises entre 1 et 5.');
-            }
-
-            return (string) $numericValue;
+        if ($value === null || $value === '') {
+            return null;
         }
 
-        if ($type === 'yes/no') {
-            if ($value === null || $value === '') {
-                return null;
-            }
-
-            return $this->normalizeYesNoValue($value);
+        $normalizedStored = $this->normalizeStoredRating($value);
+        if ($normalizedStored !== null) {
+            return (string) $normalizedStored;
         }
 
-        if ($value === null) {
-            return '';
-        }
-
-        $normalized = trim((string) $value);
-        if (mb_strlen($normalized) > 1000) {
-            throw new ValidationException('Une reponse texte depasse la taille autorisee.');
-        }
-
-        return $normalized;
+        throw new ValidationException('Les notes doivent etre comprises entre 1 et 5.');
     }
 
     private function normalizeYesNoValue($value): string

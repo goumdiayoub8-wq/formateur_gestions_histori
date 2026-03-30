@@ -18,9 +18,13 @@ export function ThemeProvider({ children }) {
   const [hasStoredTheme, setHasStoredTheme] = useState(() => readStoredTheme() !== null);
   const [isSaving, setIsSaving] = useState(false);
   const lastSyncedThemeRef = useRef(null);
+  const animateNextThemeSwitchRef = useRef(false);
 
   useEffect(() => {
-    applyThemeToDocument(theme);
+    applyThemeToDocument(theme, {
+      withEffect: animateNextThemeSwitchRef.current,
+    });
+    animateNextThemeSwitchRef.current = false;
     persistTheme(theme);
   }, [theme]);
 
@@ -110,6 +114,7 @@ export function ThemeProvider({ children }) {
   };
 
   const toggleTheme = () => {
+    animateNextThemeSwitchRef.current = true;
     setTheme(theme === THEMES.DARK ? THEMES.LIGHT : THEMES.DARK);
   };
 

@@ -27,22 +27,34 @@ class DashboardService
         $trainerStats = [];
         $globalS1 = 0.0;
         $globalS2 = 0.0;
+        $totalPlannedHours = 0.0;
+        $totalCompletedHours = 0.0;
+        $currentWeekPlannedHours = 0.0;
 
         foreach ($trainerRows as $row) {
             $annualHours = round(floatval($row['annual_hours'] ?? 0), 2);
             $s1Hours = round(floatval($row['s1_hours'] ?? 0), 2);
             $s2Hours = round(floatval($row['s2_hours'] ?? 0), 2);
-            $difference = round(abs($s1Hours - $s2Hours), 2);
+            $plannedHours = round(floatval($row['planned_hours'] ?? 0), 2);
+            $completedHours = round(floatval($row['completed_hours'] ?? 0), 2);
+            $plannedS1Hours = round(floatval($row['planned_s1_hours'] ?? 0), 2);
+            $plannedS2Hours = round(floatval($row['planned_s2_hours'] ?? 0), 2);
+            $currentWeekHours = round(floatval($row['current_week_hours'] ?? 0), 2);
+            $maxWeekHours = round(floatval($row['max_week_hours'] ?? 0), 2);
+            $difference = round(abs($plannedS1Hours - $plannedS2Hours), 2);
             $questionnairePercentage = $row['questionnaire_percentage'] !== null
                 ? round(floatval($row['questionnaire_percentage']), 2)
                 : null;
 
-            $globalS1 += $s1Hours;
-            $globalS2 += $s2Hours;
+            $globalS1 += $plannedS1Hours;
+            $globalS2 += $plannedS2Hours;
+            $totalPlannedHours += $plannedHours;
+            $totalCompletedHours += $completedHours;
+            $currentWeekPlannedHours += $currentWeekHours;
 
             $rowAlerts = [];
 
-            if ($annualHours > floatval($row['max_heures'])) {
+            if ($plannedHours > floatval($row['max_heures'])) {
                 $rowAlerts[] = 'annual_limit_exceeded';
                 $alerts[] = [
                     'type' => 'annual_limit_exceeded',
@@ -66,10 +78,16 @@ class DashboardService
                 'email' => $row['email'],
                 'specialite' => $row['specialite'],
                 'annual_hours' => $annualHours,
+                'planned_hours' => $plannedHours,
+                'completed_hours' => $completedHours,
                 'max_heures' => intval($row['max_heures']),
                 's1_hours' => $s1Hours,
                 's2_hours' => $s2Hours,
+                'planned_s1_hours' => $plannedS1Hours,
+                'planned_s2_hours' => $plannedS2Hours,
                 'semester_gap' => $difference,
+                'current_week_hours' => $currentWeekHours,
+                'max_week_hours' => $maxWeekHours,
                 'questionnaire_percentage' => $questionnairePercentage,
                 'alerts' => $rowAlerts,
             ];
@@ -79,7 +97,7 @@ class DashboardService
             $alerts[] = [
                 'type' => 'weekly_overload',
                 'formateur_id' => intval($row['formateur_id']),
-                'message' => $row['nom'] . ' depasse 26h en semaine ' . intval($row['semaine']) . '.',
+                'message' => $row['nom'] . ' depasse 44h en semaine ' . intval($row['semaine']) . '.',
             ];
         }
 
@@ -90,6 +108,9 @@ class DashboardService
                 'total_affectations' => intval($overview['total_affectations'] ?? 0),
                 'total_planning_rows' => intval($overview['total_planning_rows'] ?? 0),
                 'total_module_hours' => round(floatval($overview['total_module_hours'] ?? 0), 2),
+                'total_validated_planned_hours' => round($totalPlannedHours, 2),
+                'total_completed_hours' => round($totalCompletedHours, 2),
+                'current_week_validated_hours' => round($currentWeekPlannedHours, 2),
             ],
             'semester_balance' => [
                 'S1' => round($globalS1, 2),
@@ -189,6 +210,8 @@ class DashboardService
                 'annual_completed_hours' => $annualCompleted,
                 'annual_target_hours' => $annualTarget,
                 'weekly_hours' => round(floatval($kpis['weekly_hours'] ?? 0), 2),
+                'weekly_target_hours' => round(floatval($visibility['summary']['weekly_target_hours'] ?? 0), 2),
+                'weekly_limit_hours' => round(floatval($visibility['summary']['weekly_limit_hours'] ?? 44), 2),
                 'assigned_modules' => intval($kpis['assigned_modules'] ?? 0),
                 'groups_count' => intval($kpis['groups_count'] ?? 0),
                 'pending_requests' => intval($kpis['pending_requests'] ?? 0),
@@ -283,12 +306,24 @@ class DashboardService
 
     public function createTrainerChangeRequest(int $formateurId, array $payload, int $annee): array
     {
+        $groupeCode = trim((string) ($payload['groupe_code'] ?? ''));
+        $weekNumber = !empty($payload['request_week']) ? intval($payload['request_week']) : null;
+        $weekLabel = trim((string) ($payload['semaine'] ?? ''));
+
+        if ($weekLabel === '' && $weekNumber !== null) {
+            $weekLabel = 'Semaine ' . $weekNumber;
+        }
+
+        if ($weekLabel === '') {
+            $weekLabel = 'A definir';
+        }
+
         $created = $this->dashboard->createTrainerChangeRequest([
             'formateur_id' => $formateurId,
             'module_id' => intval($payload['module_id']),
-            'groupe_code' => trim((string) ($payload['groupe_code'] ?? '')),
-            'semaine' => trim((string) ($payload['semaine'] ?? '')),
-            'request_week' => !empty($payload['request_week']) ? intval($payload['request_week']) : null,
+            'groupe_code' => $groupeCode,
+            'semaine' => $weekLabel,
+            'request_week' => $weekNumber,
             'academic_year' => $annee,
             'reason' => trim((string) ($payload['reason'] ?? '')),
         ]);
@@ -312,18 +347,14 @@ class DashboardService
 
     public function reviewTrainerChangeRequest(int $requestId, string $status, ?string $note = null): array
     {
-        $normalizedStatus = $status === 'validated' ? 'approved' : ($status === 'confirmed' ? 'rejected' : $status);
+        $normalizedStatus = $status === 'approved'
+            ? 'validated'
+            : $status;
 
-        if (!in_array($normalizedStatus, ['approved', 'rejected'], true)) {
+        if (!in_array($normalizedStatus, ['validated', 'rejected'], true)) {
             throw new ValidationException('Le statut de revue est invalide.');
         }
 
-        $reviewed = $this->dashboard->reviewTrainerChangeRequest($requestId, $normalizedStatus, $note);
-
-        if (!$reviewed) {
-            throw new NotFoundException('La demande de planning est introuvable.');
-        }
-
-        return $reviewed;
+        return $this->planning->reviewDemandeRequest($requestId, $normalizedStatus, $note);
     }
 }

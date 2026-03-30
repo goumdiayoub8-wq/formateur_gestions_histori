@@ -159,7 +159,7 @@ export default function QuestionnaireEvaluationPage() {
       setScore(null);
       setNotice({
         tone: 'danger',
-        message: error?.response?.data?.message || error?.message || 'Impossible de charger le questionnaire.',
+        message: error?.response?.data?.message || error?.message || 'Impossible de charger l evaluation.',
       });
     } finally {
       setLoading(false);
@@ -170,17 +170,17 @@ export default function QuestionnaireEvaluationPage() {
     loadQuestionnaire();
   }, []);
 
-  const questions = questionnaireData?.questions || [];
+  const models = questionnaireData?.models || questionnaireData?.questions || [];
   const scoreMeta = getScoreMeta(score?.percentage);
   const canSubmit = Boolean(questionnaireData?.can_submit);
 
   const metrics = useMemo(() => {
     return {
-      questionCount: questions.length,
-      weightedQuestions: questions.filter((question) => Number(question.weight) > 0).length,
+      modelCount: models.length,
+      weightedModels: models.filter((model) => Number(model.weight) > 0).length,
       percentage: Number.isFinite(Number(score?.percentage)) ? `${Math.round(Number(score.percentage))}%` : 'Non evalue',
     };
-  }, [questions, score]);
+  }, [models, score]);
 
   const handleAnswerChange = (questionId, value) => {
     setAnswers((current) => ({
@@ -198,16 +198,12 @@ export default function QuestionnaireEvaluationPage() {
   const validateForm = () => {
     const nextErrors = {};
 
-    questions.forEach((question) => {
-      if (question.type === 'text') {
-        return;
-      }
-
-      const value = answers[question.id];
+    models.forEach((model) => {
+      const value = answers[model.id];
       const empty = value === undefined || value === null || value === '';
 
       if (empty) {
-        nextErrors[question.id] = 'Cette question est obligatoire.';
+        nextErrors[model.id] = 'Cette note est obligatoire.';
       }
     });
 
@@ -219,7 +215,7 @@ export default function QuestionnaireEvaluationPage() {
     if (!validateForm()) {
       setNotice({
         tone: 'warning',
-        message: 'Merci de completer toutes les questions obligatoires avant l envoi.',
+        message: 'Merci de completer toutes les notes obligatoires avant l envoi.',
       });
       return;
     }
@@ -229,10 +225,10 @@ export default function QuestionnaireEvaluationPage() {
       setNotice(null);
 
       const payload = {
-        answers: questions
-          .map((question) => ({
-            question_id: question.id,
-            value: answers[question.id] ?? '',
+        answers: models
+          .map((model) => ({
+            question_id: model.id,
+            value: answers[model.id] ?? '',
           }))
           .filter((answer) => answer.value !== ''),
       };
@@ -241,7 +237,7 @@ export default function QuestionnaireEvaluationPage() {
       await loadQuestionnaire();
       setNotice({
         tone: 'success',
-        message: 'Votre questionnaire a ete soumis avec succes.',
+        message: 'Votre evaluation a ete soumise avec succes.',
       });
     } catch (error) {
       setNotice({
@@ -264,16 +260,16 @@ export default function QuestionnaireEvaluationPage() {
   return (
     <div className="space-y-6 pb-8">
       <div className="rounded-[28px] bg-gradient-to-r from-[#2155f5] via-[#2d74ff] to-[#33b7ff] px-6 py-8 text-white shadow-[0_20px_50px_rgba(37,97,255,0.26)]">
-        <h1 className="text-[24px] font-bold tracking-tight">Questionnaire d evaluation</h1>
+        <h1 className="text-[24px] font-bold tracking-tight">Evaluation des modeles</h1>
         <p className="mt-3 max-w-3xl text-[15px] text-white/88">
-          Evaluez votre performance pedagogique a partir d un referentiel simple, avec calcul automatique du score et restitution immediate.
+          Evaluez chaque modele avec une note de 1 a 5, puis laissez le systeme calculer automatiquement votre score global.
         </p>
         <div className="mt-5 flex flex-wrap gap-3 text-sm">
           <span className="rounded-full bg-white/14 px-3 py-1.5 font-semibold">
-            {questionnaireData?.questionnaire?.title || 'Questionnaire actif'}
+            {questionnaireData?.questionnaire?.title || 'Evaluation active'}
           </span>
           <span className="rounded-full bg-white/14 px-3 py-1.5 font-semibold">
-            {metrics.questionCount} question(s)
+            {metrics.modelCount} modele(s)
           </span>
           <span className="rounded-full bg-white/14 px-3 py-1.5 font-semibold">
             Score {metrics.percentage}
@@ -300,16 +296,16 @@ export default function QuestionnaireEvaluationPage() {
         <FormateurStatCard
           icon={ClipboardCheck}
           iconClassName="bg-[#eef3ff] text-[#315cf0]"
-          label="Questions"
-          value={metrics.questionCount}
-          helper="Questions chargees depuis le questionnaire actif"
+          label="Modeles"
+          value={metrics.modelCount}
+          helper="Modeles charges pour cette evaluation"
         />
         <FormateurStatCard
           icon={ShieldAlert}
           iconClassName="bg-[#fff5e8] text-[#e67f1a]"
-          label="Questions scorees"
-          value={metrics.weightedQuestions}
-          helper="Questions prises en compte dans le calcul"
+          label="Modeles notes"
+          value={metrics.weightedModels}
+          helper="Modeles pris en compte dans le calcul"
         />
         <FormateurStatCard
           icon={CheckCircle2}
@@ -325,50 +321,66 @@ export default function QuestionnaireEvaluationPage() {
       <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <FormateurPanel className="p-6">
           <FormateurSectionHeader
-            title="Questions"
-            description="Toutes les questions notees doivent etre completees avant la soumission."
+            title="Modeles"
+            description="Tous les modeles doivent recevoir une note avant la soumission."
           />
 
-          {questions.length === 0 ? (
+          {models.length === 0 ? (
             <div className="mt-6">
               <FormateurEmptyBlock
-                title="Aucune question disponible"
-                description="Le questionnaire n est pas encore configure pour votre espace."
+                title="Aucun modele disponible"
+                description="L evaluation n est pas encore configuree pour votre espace."
               />
             </div>
           ) : (
             <div className="mt-6 space-y-4">
-              {questions.map((question, index) => (
-                <div key={question.id} className="rounded-[24px] border border-[#e1e9f3] bg-[#fbfdff] px-5 py-5">
+              {models.map((model, index) => (
+                <div key={model.id} className="rounded-[24px] border border-[#e1e9f3] bg-[#fbfdff] px-5 py-5">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <p className="text-[13px] font-semibold uppercase tracking-[0.16em] text-[#8c9bb0]">
-                        Question {index + 1}
+                        Modele {index + 1}
                       </p>
                       <h3 className="mt-2 text-[17px] font-bold leading-7 text-[#1f2a3d]">
-                        {question.question_text}
+                        {model.name || model.question_text}
                       </h3>
+                      {model.description ? (
+                        <p className="mt-2 max-w-3xl text-[14px] leading-6 text-[#6f8199]">{model.description}</p>
+                      ) : null}
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <span className="rounded-full bg-[#eef4ff] px-3 py-1 text-[12px] font-bold text-[#3163ef]">
-                        {question.type}
+                        Rating
                       </span>
                       <span className="rounded-full bg-[#f4f7fb] px-3 py-1 text-[12px] font-bold text-[#62748f]">
-                        Poids {Number(question.weight)}
+                        Poids {Number(model.weight)}
+                      </span>
+                      <span className="rounded-full bg-[#edf9f1] px-3 py-1 text-[12px] font-bold text-[#129347]">
+                        Global {Number.isFinite(Number(model.global_score?.percentage)) ? `${Math.round(Number(model.global_score.percentage))}%` : '--'}
                       </span>
                     </div>
                   </div>
 
+                  {Array.isArray(model.skills) && model.skills.length ? (
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {model.skills.map((skill) => (
+                        <span key={`${model.id}-${skill}`} className="rounded-full bg-[#f5f8fd] px-3 py-1 text-[12px] font-semibold text-[#5a6f8e]">
+                          {skill}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+
                   <div className="mt-5">
                     <QuestionInput
-                      question={question}
-                      value={answers[question.id] ?? ''}
+                      question={model}
+                      value={answers[model.id] ?? ''}
                       disabled={!canSubmit || submitting}
-                      error={errors[question.id]}
-                      onChange={(value) => handleAnswerChange(question.id, value)}
+                      error={errors[model.id]}
+                      onChange={(value) => handleAnswerChange(model.id, value)}
                     />
-                    {errors[question.id] ? (
-                      <p className="mt-3 text-sm font-semibold text-[#d14343]">{errors[question.id]}</p>
+                    {errors[model.id] ? (
+                      <p className="mt-3 text-sm font-semibold text-[#d14343]">{errors[model.id]}</p>
                     ) : null}
                   </div>
                 </div>
@@ -377,22 +389,22 @@ export default function QuestionnaireEvaluationPage() {
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] bg-[#f5f8fd] px-5 py-5">
                 <div>
                   <p className="text-[17px] font-bold text-[#1f2a3d]">
-                    {canSubmit ? 'Pret a envoyer ?' : 'Questionnaire deja soumis'}
+                    {canSubmit ? 'Pret a envoyer ?' : 'Evaluation deja soumise'}
                   </p>
                   <p className="mt-2 text-[15px] text-[#6f8199]">
                     {canSubmit
-                      ? 'Une seule soumission est autorisee pour ce questionnaire.'
-                      : 'Votre reponse a deja ete enregistree. Le score reste visible dans votre dashboard.'}
+                      ? 'Une seule soumission est autorisee pour cette evaluation.'
+                      : 'Votre notation a deja ete enregistree. Le score reste visible dans votre dashboard.'}
                   </p>
                 </div>
                 <button
                   type="button"
-                  disabled={!canSubmit || submitting || questions.length === 0}
+                  disabled={!canSubmit || submitting || models.length === 0}
                   onClick={handleSubmit}
                   className="inline-flex items-center gap-2 rounded-[18px] bg-[linear-gradient(90deg,_#2155f5_0%,_#33b7ff_100%)] px-5 py-3 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(33,85,245,0.24)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Send className="h-4 w-4" />
-                  {submitting ? 'Envoi en cours...' : 'Soumettre le questionnaire'}
+                  {submitting ? 'Envoi en cours...' : 'Soumettre l evaluation'}
                 </button>
               </div>
             </div>
@@ -401,8 +413,8 @@ export default function QuestionnaireEvaluationPage() {
 
         <FormateurPanel className="p-6">
           <FormateurSectionHeader
-            title="Resultat"
-            description="Votre score est calcule automatiquement a partir des reponses ponderees."
+            title="Resultat global"
+            description="Votre score est calcule automatiquement a partir des notes attribuees aux modeles."
           />
 
           <div className="mt-6 rounded-[24px] bg-[#f8fbff] px-5 py-5">
@@ -460,7 +472,7 @@ export default function QuestionnaireEvaluationPage() {
               <div>
                 <p className="text-[16px] font-bold text-[#1f2a3d]">Visibilite chef de pole</p>
                 <p className="mt-2 text-[15px] leading-7 text-[#70819a]">
-                  Le score est automatiquement repris dans la table des formateurs cote chef, avec code couleur et indicateur de progression.
+                  Le score global et les scores moyens par modele sont automatiquement repris dans le suivi cote chef.
                 </p>
               </div>
             </div>

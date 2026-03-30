@@ -52,6 +52,34 @@ class ReportController
         ], 201);
     }
 
+    public function generateAssignmentCoverage(): void
+    {
+        $payload = readJsonBody();
+        $format = InputValidator::oneOf($payload, 'format', 'format', ['pdf', 'xlsx']);
+        $report = $this->reports->generateAssignmentCoverage($format, currentUserId() ?? requireAuthentication());
+
+        jsonResponse([
+            'status' => 'success',
+            'message' => 'Rapport couverture des affectations genere.',
+            'data' => $report,
+            'report' => $report,
+        ], 201);
+    }
+
+    public function generateValidationStatus(): void
+    {
+        $payload = readJsonBody();
+        $format = InputValidator::oneOf($payload, 'format', 'format', ['pdf', 'xlsx']);
+        $report = $this->reports->generateValidationStatus($format, currentUserId() ?? requireAuthentication());
+
+        jsonResponse([
+            'status' => 'success',
+            'message' => 'Rapport validation planning genere.',
+            'data' => $report,
+            'report' => $report,
+        ], 201);
+    }
+
     public function download(): void
     {
         $reportId = InputValidator::integer(['id' => requestQuery('id')], 'id', 'rapport', true, 1);
@@ -61,10 +89,26 @@ class ReportController
             throw new NotFoundException('Le fichier du rapport est introuvable.');
         }
 
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+
+        $downloadName = $report['download_name'] ?? basename($report['absolute_path']);
+        $asciiName = preg_replace('/[^A-Za-z0-9._-]/', '_', $downloadName) ?: 'rapport';
+
         header('Content-Type: ' . $report['content_type']);
         header('Content-Length: ' . filesize($report['absolute_path']));
-        header('Content-Disposition: attachment; filename="' . basename($report['absolute_path']) . '"');
-        readfile($report['absolute_path']);
+        header('Content-Disposition: attachment; filename="' . $asciiName . '"; filename*=UTF-8\'\'' . rawurlencode($downloadName));
+        header('Content-Transfer-Encoding: binary');
+        header('Cache-Control: private, must-revalidate');
+        header('Pragma: public');
+        header('Expires: 0');
+        header('X-Content-Type-Options: nosniff');
+
+        if (readfile($report['absolute_path']) === false) {
+            throw new RuntimeException('Le telechargement du rapport a echoue.');
+        }
+
         exit();
     }
 }

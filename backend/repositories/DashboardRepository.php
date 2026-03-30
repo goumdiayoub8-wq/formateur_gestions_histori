@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/../core/helpers.php';
+
 class DashboardRepository
 {
     private PDO $db;
@@ -9,6 +11,13 @@ class DashboardRepository
         $this->db = $db;
     }
 
+    private function buildInClause(array $values): array
+    {
+        $placeholders = implode(', ', array_fill(0, count($values), '?'));
+
+        return [$placeholders, array_values($values)];
+    }
+
     public function getOverview(): array
     {
         $stmt = $this->db->query(
@@ -16,7 +25,7 @@ class DashboardRepository
                 (SELECT COUNT(*) FROM formateurs) AS total_formateurs,
                 (SELECT COUNT(*) FROM modules) AS total_modules,
                 (SELECT COUNT(*) FROM affectations) AS total_affectations,
-                (SELECT COUNT(*) FROM planning) AS total_planning_rows,
+                (SELECT COUNT(*) FROM planning_sessions) AS total_planning_rows,
                 (SELECT COALESCE(SUM(volume_horaire), 0) FROM modules) AS total_module_hours'
         );
 
@@ -25,6 +34,19 @@ class DashboardRepository
 
     public function getTrainerRows(): array
     {
+        $plannedHoursExpression = planningSessionHoursExpression('planned_sessions');
+        $completedHoursExpression = completedPlanningSessionHoursExpression('completed_sessions');
+        $validatedPlanningCondition = validatedPlanningSessionExistsCondition('planned_sessions', 'planned_submissions', currentAcademicYear());
+        $currentWeekHoursExpression = planningSessionHoursExpression('current_week_sessions');
+        $currentWeekValidatedCondition = validatedPlanningSessionExistsCondition('current_week_sessions', 'current_week_submissions', currentAcademicYear());
+        $maxWeekHoursExpression = planningSessionHoursExpression('weekly_sessions');
+        $maxWeekValidatedCondition = validatedPlanningSessionExistsCondition('weekly_sessions', 'weekly_submissions', currentAcademicYear());
+        $plannedS1HoursExpression = planningSessionHoursExpression('planned_s1_sessions');
+        $plannedS1ValidatedCondition = validatedPlanningSessionExistsCondition('planned_s1_sessions', 'planned_s1_submissions', currentAcademicYear());
+        $plannedS2HoursExpression = planningSessionHoursExpression('planned_s2_sessions');
+        $plannedS2ValidatedCondition = validatedPlanningSessionExistsCondition('planned_s2_sessions', 'planned_s2_submissions', currentAcademicYear());
+        $completedSessionsCondition = completedPlanningSessionCondition('completed_sessions');
+        $currentWeek = currentAcademicWeek();
         $stmt = $this->db->query(
             'SELECT
                 f.id,
@@ -35,6 +57,51 @@ class DashboardRepository
                 COALESCE(SUM(m.volume_horaire), 0) AS annual_hours,
                 COALESCE(SUM(CASE WHEN m.semestre = "S1" THEN m.volume_horaire ELSE 0 END), 0) AS s1_hours,
                 COALESCE(SUM(CASE WHEN m.semestre = "S2" THEN m.volume_horaire ELSE 0 END), 0) AS s2_hours,
+                COALESCE((
+                    SELECT ' . $plannedHoursExpression . '
+                    FROM planning_sessions planned_sessions
+                    WHERE planned_sessions.formateur_id = f.id
+                      AND ' . $validatedPlanningCondition . '
+                ), 0) AS planned_hours,
+                COALESCE((
+                    SELECT ' . $completedHoursExpression . '
+                    FROM planning_sessions completed_sessions
+                    WHERE completed_sessions.formateur_id = f.id
+                      AND ' . $completedSessionsCondition . '
+                ), 0) AS completed_hours,
+                COALESCE((
+                    SELECT ' . $plannedS1HoursExpression . '
+                    FROM planning_sessions planned_s1_sessions
+                    INNER JOIN modules planned_s1_modules ON planned_s1_modules.id = planned_s1_sessions.module_id
+                    WHERE planned_s1_sessions.formateur_id = f.id
+                      AND planned_s1_modules.semestre = "S1"
+                      AND ' . $plannedS1ValidatedCondition . '
+                ), 0) AS planned_s1_hours,
+                COALESCE((
+                    SELECT ' . $plannedS2HoursExpression . '
+                    FROM planning_sessions planned_s2_sessions
+                    INNER JOIN modules planned_s2_modules ON planned_s2_modules.id = planned_s2_sessions.module_id
+                    WHERE planned_s2_sessions.formateur_id = f.id
+                      AND planned_s2_modules.semestre = "S2"
+                      AND ' . $plannedS2ValidatedCondition . '
+                ), 0) AS planned_s2_hours,
+                COALESCE((
+                    SELECT ' . $currentWeekHoursExpression . '
+                    FROM planning_sessions current_week_sessions
+                    WHERE current_week_sessions.formateur_id = f.id
+                      AND current_week_sessions.week_number = ' . $currentWeek . '
+                      AND ' . $currentWeekValidatedCondition . '
+                ), 0) AS current_week_hours,
+                COALESCE((
+                    SELECT MAX(weekly_hours)
+                    FROM (
+                        SELECT ' . $maxWeekHoursExpression . ' AS weekly_hours
+                        FROM planning_sessions weekly_sessions
+                        WHERE weekly_sessions.formateur_id = f.id
+                          AND ' . $maxWeekValidatedCondition . '
+                        GROUP BY weekly_sessions.week_number
+                    ) AS trainer_weekly_totals
+                ), 0) AS max_week_hours,
                 CASE WHEN s.id IS NULL THEN NULL ELSE ROUND(s.percentage, 2) END AS questionnaire_percentage
              FROM formateurs f
              LEFT JOIN affectations a ON a.formateur_id = f.id
@@ -49,17 +116,21 @@ class DashboardRepository
 
     public function getWeeklyOverloads(): array
     {
+        $plannedHoursExpression = planningSessionHoursExpression('s');
+        $validatedPlanningCondition = validatedPlanningSessionExistsCondition('s', 'ps', currentAcademicYear());
         $stmt = $this->db->query(
             'SELECT
-                p.formateur_id,
+                s.formateur_id,
                 f.nom,
-                p.semaine,
-                SUM(p.heures) AS weekly_hours
-             FROM planning p
-             INNER JOIN formateurs f ON f.id = p.formateur_id
-             GROUP BY p.formateur_id, f.nom, p.semaine
-             HAVING SUM(p.heures) > 26
-             ORDER BY weekly_hours DESC, p.semaine ASC'
+                s.week_number AS semaine,
+                ' . $plannedHoursExpression . ' AS weekly_hours
+             FROM planning_sessions s
+             INNER JOIN formateurs f ON f.id = s.formateur_id
+             WHERE s.week_number BETWEEN ' . SYSTEM_WEEK_MIN . ' AND ' . SYSTEM_WEEK_MAX . '
+               AND ' . $validatedPlanningCondition . '
+             GROUP BY s.formateur_id, f.nom, s.week_number
+             HAVING ' . $plannedHoursExpression . ' > 44
+             ORDER BY weekly_hours DESC, s.week_number ASC'
         );
 
         return $stmt->fetchAll();
@@ -67,6 +138,8 @@ class DashboardRepository
 
     public function getDirectorKpis(): array
     {
+        $completedSessionsCondition = completedPlanningSessionCondition('s');
+        $completedHoursExpression = completedPlanningSessionHoursExpression('s');
         $stmt = $this->db->query(
             'SELECT
                 (SELECT COUNT(*) FROM planning_submissions WHERE status = "pending") AS pending_validations,
@@ -74,8 +147,18 @@ class DashboardRepository
                 (SELECT COUNT(*) FROM planning_submissions WHERE status = "approved") AS approved_validations,
                 (SELECT COUNT(*) FROM planning_submissions WHERE status = "approved" AND YEARWEEK(processed_at, 1) = YEARWEEK(CURDATE(), 1)) AS approved_this_week,
                 (SELECT COUNT(*) FROM modules m
-                    WHERE COALESCE((SELECT SUM(p.heures) FROM planning p WHERE p.module_id = m.id), 0) > 0
-                      AND COALESCE((SELECT SUM(p.heures) FROM planning p WHERE p.module_id = m.id), 0) < m.volume_horaire) AS modules_in_progress,
+                    WHERE COALESCE((
+                        SELECT ' . $completedHoursExpression . '
+                        FROM planning_sessions s
+                        WHERE s.module_id = m.id
+                          AND ' . $completedSessionsCondition . '
+                    ), 0) > 0
+                      AND COALESCE((
+                        SELECT ' . $completedHoursExpression . '
+                        FROM planning_sessions s
+                        WHERE s.module_id = m.id
+                          AND ' . $completedSessionsCondition . '
+                    ), 0) < m.volume_horaire) AS modules_in_progress,
                 (SELECT COUNT(*) FROM groupes WHERE actif = 1) AS active_groups'
         );
 
@@ -97,6 +180,8 @@ class DashboardRepository
 
     public function getFiliereProgress(): array
     {
+        $completedSessionsCondition = completedPlanningSessionCondition('s');
+        $completedHoursExpression = completedPlanningSessionHoursExpression('s');
         $stmt = $this->db->query(
             'SELECT
                 m.filiere,
@@ -111,8 +196,9 @@ class DashboardRepository
                 ), 0) AS validated_percent
              FROM modules m
              LEFT JOIN (
-                SELECT module_id, SUM(heures) AS hours_done
-                FROM planning
+                SELECT module_id, ' . $completedHoursExpression . ' AS hours_done
+                FROM planning_sessions s
+                WHERE ' . $completedSessionsCondition . '
                 GROUP BY module_id
              ) pl ON pl.module_id = m.id
              GROUP BY m.filiere
@@ -155,6 +241,10 @@ class DashboardRepository
 
     public function getTrainerKpis(int $formateurId, int $week, int $annee): array
     {
+        $completedSessionsCondition = completedPlanningSessionCondition('s');
+        $completedHoursExpression = completedPlanningSessionHoursExpression('s');
+        $plannedHoursExpression = planningSessionHoursExpression('ps');
+        $validatedPlanningCondition = validatedPlanningSessionExistsCondition('ps', 'vs', $annee);
         $stmt = $this->db->prepare(
             'SELECT
                 f.id,
@@ -164,15 +254,17 @@ class DashboardRepository
                 f.specialite,
                 f.max_heures,
                 COALESCE((
-                    SELECT SUM(p.heures)
-                    FROM planning p
-                    WHERE p.formateur_id = f.id
+                    SELECT ' . $completedHoursExpression . '
+                    FROM planning_sessions s
+                    WHERE s.formateur_id = f.id
+                      AND ' . $completedSessionsCondition . '
                 ), 0) AS annual_completed_hours,
                 COALESCE((
-                    SELECT SUM(p.heures)
-                    FROM planning p
-                    WHERE p.formateur_id = f.id
-                      AND p.semaine = :week
+                    SELECT ' . $plannedHoursExpression . '
+                    FROM planning_sessions ps
+                    WHERE ps.formateur_id = f.id
+                      AND ps.week_number = :week
+                      AND ' . $validatedPlanningCondition . '
                 ), 0) AS weekly_hours,
                 COALESCE((
                     SELECT COUNT(*)
@@ -211,6 +303,10 @@ class DashboardRepository
 
     public function getTrainerAssignedModules(int $formateurId, int $annee, int $week): array
     {
+        $completedSessionsCondition = completedPlanningSessionCondition('s');
+        $completedHoursExpression = completedPlanningSessionHoursExpression('s');
+        $plannedHoursExpression = planningSessionHoursExpression('ps');
+        $validatedPlanningCondition = validatedPlanningSessionExistsCondition('ps', 'vs', $annee);
         $stmt = $this->db->prepare(
             'SELECT
                 m.id,
@@ -220,13 +316,34 @@ class DashboardRepository
                 m.semestre,
                 m.volume_horaire,
                 m.has_efm,
-                COALESCE(SUM(p.heures), 0) AS completed_hours,
-                COALESCE(SUM(CASE WHEN p.semaine = :week THEN p.heures ELSE 0 END), 0) AS weekly_hours,
+                COALESCE(executed.completed_hours, 0) AS completed_hours,
+                COALESCE(planned.weekly_hours, 0) AS weekly_hours,
                 COALESCE(GROUP_CONCAT(DISTINCT g.code ORDER BY g.code SEPARATOR " • "), "") AS groupes,
                 COALESCE(GROUP_CONCAT(DISTINCT CONCAT(g.code, "::", COALESCE(g.effectif, 20)) ORDER BY g.code SEPARATOR "|"), "") AS groupes_payload
              FROM affectations a
              INNER JOIN modules m ON m.id = a.module_id
-             LEFT JOIN planning p ON p.module_id = m.id AND p.formateur_id = a.formateur_id
+             LEFT JOIN (
+                    SELECT
+                    s.formateur_id,
+                    s.module_id,
+                    ' . $completedHoursExpression . ' AS completed_hours
+                FROM planning_sessions s
+                WHERE ' . $completedSessionsCondition . '
+                GROUP BY s.formateur_id, s.module_id
+             ) executed ON executed.module_id = m.id AND executed.formateur_id = a.formateur_id
+             LEFT JOIN (
+                SELECT
+                    ps.formateur_id,
+                    ps.module_id,
+                    ps.week_number,
+                    ' . $plannedHoursExpression . ' AS weekly_hours
+                FROM planning_sessions ps
+                WHERE ps.week_number = :week_filter
+                  AND ' . $validatedPlanningCondition . '
+                GROUP BY ps.formateur_id, ps.module_id, ps.week_number
+             ) planned ON planned.module_id = m.id
+                AND planned.formateur_id = a.formateur_id
+                AND planned.week_number = :week_join
              LEFT JOIN module_groupes mg ON mg.module_id = m.id
              LEFT JOIN groupes g ON g.id = mg.groupe_id
              WHERE a.formateur_id = :formateur_id
@@ -238,7 +355,9 @@ class DashboardRepository
                 m.filiere,
                 m.semestre,
                 m.volume_horaire,
-                m.has_efm
+                m.has_efm,
+                executed.completed_hours,
+                planned.weekly_hours
              ORDER BY
                 CASE m.semestre WHEN "S1" THEN 1 ELSE 2 END,
                 m.intitule ASC'
@@ -246,7 +365,8 @@ class DashboardRepository
         $stmt->execute([
             'formateur_id' => $formateurId,
             'annee' => $annee,
-            'week' => $week,
+            'week_filter' => $week,
+            'week_join' => $week,
         ]);
 
         return array_map(static function (array $row): array {
@@ -350,7 +470,9 @@ class DashboardRepository
                         ELSE 0
                     END
                 ) AS total_this_month,
-                SUM(CASE WHEN status = "approved" THEN 1 ELSE 0 END) AS approved_count,
+                SUM(CASE WHEN status IN ("validated", "planned") THEN 1 ELSE 0 END) AS approved_count,
+                SUM(CASE WHEN status = "validated" THEN 1 ELSE 0 END) AS validated_count,
+                SUM(CASE WHEN status = "planned" THEN 1 ELSE 0 END) AS planned_count,
                 SUM(CASE WHEN status = "pending" THEN 1 ELSE 0 END) AS pending_count
              FROM planning_change_requests
              WHERE formateur_id = :formateur_id
@@ -365,6 +487,8 @@ class DashboardRepository
         return [
             'total_this_month' => intval($row['total_this_month'] ?? 0),
             'approved_count' => intval($row['approved_count'] ?? 0),
+            'validated_count' => intval($row['validated_count'] ?? 0),
+            'planned_count' => intval($row['planned_count'] ?? 0),
             'pending_count' => intval($row['pending_count'] ?? 0),
         ];
     }
@@ -380,6 +504,7 @@ class DashboardRepository
                 r.reason,
                 r.status,
                 r.created_at,
+                r.updated_at,
                 r.processed_at,
                 COALESCE(m.code, CONCAT("M", LPAD(m.id, 3, "0"))) AS module_code,
                 m.intitule AS module_intitule
@@ -405,6 +530,7 @@ class DashboardRepository
                 'reason' => $row['reason'],
                 'status' => $row['status'],
                 'created_at' => $row['created_at'],
+                'updated_at' => $row['updated_at'],
                 'processed_at' => $row['processed_at'],
             ];
         }, $stmt->fetchAll());
@@ -436,8 +562,8 @@ class DashboardRepository
         $stmt->execute([
             'formateur_id' => $payload['formateur_id'],
             'module_id' => $payload['module_id'],
-            'groupe_code' => $payload['groupe_code'],
-            'semaine' => $payload['semaine'],
+            'groupe_code' => $payload['groupe_code'] ?? '',
+            'semaine' => $payload['semaine'] ?? '',
             'request_week' => $payload['request_week'],
             'academic_year' => $payload['academic_year'],
             'reason' => $payload['reason'],
@@ -468,6 +594,7 @@ class DashboardRepository
                 r.reason,
                 r.status,
                 r.created_at,
+                r.updated_at,
                 r.processed_at,
                 f.nom AS trainer_name,
                 COALESCE(m.code, CONCAT("M", LPAD(m.id, 3, "0"))) AS module_code,
@@ -478,13 +605,15 @@ class DashboardRepository
              ORDER BY
                 CASE r.status
                     WHEN "pending" THEN 0
+                    WHEN "validated" THEN 1
+                    WHEN "planned" THEN 2
                     WHEN "rejected" THEN 1
-                    ELSE 2
+                    ELSE 3
                 END,
                 COALESCE(r.processed_at, r.created_at) DESC'
         );
 
-        return array_map(static function (array $row): array {
+        $notifications = array_map(static function (array $row): array {
             $reason = (string) ($row['reason'] ?? '');
             $isAccept = stripos($reason, 'Confirmation du creneau') === 0;
             $isReject = stripos($reason, 'Refus du creneau') === 0;
@@ -494,13 +623,15 @@ class DashboardRepository
                 'id' => 'planning-change-' . intval($row['id']),
                 'title' => $status === 'pending'
                     ? ($isAccept ? 'Acceptation de creneau en attente' : ($isReject ? 'Refus de creneau en attente' : 'Action planning en attente'))
-                    : ($status === 'approved' ? 'Action planning approuvee' : 'Action planning refusee'),
+                    : ($status === 'validated'
+                        ? 'Demande validee'
+                        : ($status === 'planned' ? 'Demande planifiee' : 'Action planning refusee')),
                 'message' => sprintf('%s · %s · %s', $row['trainer_name'], $row['module_code'], $row['semaine']),
                 'details' => $reason,
-                'severity' => $status === 'rejected' ? 'danger' : ($status === 'approved' ? 'info' : 'warning'),
+                'severity' => $status === 'rejected' ? 'danger' : ($status === 'planned' ? 'info' : 'warning'),
                 'alert_type' => 'planning_change',
                 'notification_type' => 'planning_change',
-                'created_at' => $row['processed_at'] ?: $row['created_at'],
+                'created_at' => $row['updated_at'] ?: ($row['processed_at'] ?: $row['created_at']),
                 'target_path' => '/chef/notifications',
                 'metadata' => [
                     'entry_id' => intval($row['id']),
@@ -515,29 +646,62 @@ class DashboardRepository
                 ],
             ];
         }, $stmt->fetchAll());
-    }
 
-    public function reviewTrainerChangeRequest(int $requestId, string $status, ?string $note = null): ?array
-    {
-        $update = $this->db->prepare(
-            'UPDATE planning_change_requests
-             SET status = :status,
-                 updated_at = CURRENT_TIMESTAMP,
-                 processed_at = NOW()
-             WHERE id = :id'
+        $alertStmt = $this->db->prepare(
+            'SELECT id, action_label, action_tone, action_description, created_at
+             FROM recent_activities
+             WHERE formateur_id IS NULL
+               AND action_label = :action_label
+             ORDER BY created_at DESC
+             LIMIT 10'
         );
-        $update->execute([
-            'id' => $requestId,
-            'status' => $status,
+        $alertStmt->execute([
+            'action_label' => 'Alerte planning equipe',
         ]);
 
+        $alerts = array_map(static function (array $row): array {
+            return [
+                'id' => 'planning-alert-' . intval($row['id']),
+                'title' => $row['action_label'],
+                'message' => $row['action_description'],
+                'details' => $row['action_description'],
+                'severity' => $row['action_tone'] ?? 'warning',
+                'alert_type' => 'planning_alert',
+                'notification_type' => 'planning_alert',
+                'created_at' => $row['created_at'],
+                'target_path' => '/directeur/validation',
+                'metadata' => [
+                    'status' => 'planning_alert',
+                ],
+            ];
+        }, $alertStmt->fetchAll());
+
+        $notifications = array_merge($alerts, $notifications);
+        usort($notifications, static function (array $left, array $right): int {
+            return strcmp((string) ($right['created_at'] ?? ''), (string) ($left['created_at'] ?? ''));
+        });
+
+        return $notifications;
+    }
+
+    public function findTrainerChangeRequestById(int $requestId): ?array
+    {
         $stmt = $this->db->prepare(
             'SELECT
                 r.id,
                 r.formateur_id,
                 r.module_id,
+                r.groupe_code,
                 r.semaine,
-                COALESCE(m.code, CONCAT("M", LPAD(m.id, 3, "0"))) AS module_code
+                r.request_week,
+                r.academic_year,
+                r.reason,
+                r.status,
+                r.created_at,
+                r.updated_at,
+                r.processed_at,
+                COALESCE(m.code, CONCAT("M", LPAD(m.id, 3, "0"))) AS module_code,
+                m.intitule AS module_intitule
              FROM planning_change_requests r
              INNER JOIN modules m ON m.id = r.module_id
              WHERE r.id = :id
@@ -550,29 +714,134 @@ class DashboardRepository
             return null;
         }
 
+        return [
+            'id' => intval($row['id']),
+            'formateur_id' => intval($row['formateur_id']),
+            'module_id' => intval($row['module_id']),
+            'groupe_code' => $row['groupe_code'],
+            'semaine' => $row['semaine'],
+            'request_week' => $row['request_week'] !== null ? intval($row['request_week']) : null,
+            'academic_year' => intval($row['academic_year']),
+            'reason' => $row['reason'],
+            'status' => $row['status'],
+            'created_at' => $row['created_at'],
+            'updated_at' => $row['updated_at'],
+            'processed_at' => $row['processed_at'],
+            'module_code' => $row['module_code'],
+            'module_intitule' => $row['module_intitule'],
+        ];
+    }
+
+    public function findTrainerChangeRequestIdsByPlanningContext(int $formateurId, int $moduleId, int $weekNumber, array $statuses = ['validated', 'planned']): array
+    {
+        if ($statuses === []) {
+            return [];
+        }
+
+        [$placeholders, $params] = $this->buildInClause($statuses);
+        $sql = sprintf(
+            'SELECT id
+             FROM planning_change_requests
+             WHERE formateur_id = ?
+               AND module_id = ?
+               AND status IN (%s)
+               AND (request_week IS NULL OR request_week = ?)
+             ORDER BY created_at ASC, id ASC',
+            $placeholders
+        );
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute(array_merge([$formateurId, $moduleId], $params, [$weekNumber]));
+
+        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    }
+
+    public function countPlanningSessionsForContext(int $formateurId, int $moduleId, int $weekNumber, ?string $groupCode = null): int
+    {
+        $validatedPlanningCondition = validatedPlanningSessionExistsCondition('s', 'ps', currentAcademicYear());
+        $stmt = $this->db->prepare(
+            'SELECT COUNT(*)
+             FROM planning_sessions s
+             LEFT JOIN groupes g ON g.id = s.groupe_id
+             WHERE s.formateur_id = :formateur_id
+               AND s.module_id = :module_id
+               AND s.week_number = :week_number
+               AND ' . $validatedPlanningCondition . '
+               AND (:group_code_any = "" OR COALESCE(g.code, "") = :group_code_exact)'
+        );
+        $stmt->execute([
+            'formateur_id' => $formateurId,
+            'module_id' => $moduleId,
+            'week_number' => $weekNumber,
+            'group_code_any' => trim((string) ($groupCode ?? '')),
+            'group_code_exact' => trim((string) ($groupCode ?? '')),
+        ]);
+
+        return intval($stmt->fetchColumn() ?? 0);
+    }
+
+    public function updateTrainerChangeRequestStatus(int $requestId, string $status, array $options = []): void
+    {
+        $weekNumber = isset($options['week_number']) ? intval($options['week_number']) : null;
+        $weekLabel = $options['week_label'] ?? ($weekNumber !== null ? 'Semaine ' . $weekNumber : '');
+        $groupCode = trim((string) ($options['group_code'] ?? ''));
+        $touchProcessedAt = !empty($options['touch_processed_at']);
+
+        $stmt = $this->db->prepare(
+            'UPDATE planning_change_requests
+             SET status = :status,
+                 request_week = CASE
+                    WHEN :request_week_value IS NOT NULL AND request_week IS NULL THEN :request_week_target
+                    ELSE request_week
+                 END,
+                 semaine = CASE
+                    WHEN :week_label_check <> "" AND COALESCE(semaine, "") IN ("", "A definir") THEN :week_label_value
+                    ELSE semaine
+                 END,
+                 groupe_code = CASE
+                    WHEN :group_code_check <> "" AND COALESCE(groupe_code, "") = "" THEN :group_code_value
+                    ELSE groupe_code
+                 END,
+                 updated_at = CURRENT_TIMESTAMP,
+                 processed_at = CASE
+                    WHEN :touch_processed_flag = 1 THEN NOW()
+                    ELSE processed_at
+                 END
+             WHERE id = :id'
+        );
+        $stmt->execute([
+            'id' => $requestId,
+            'status' => $status,
+            'request_week_value' => $weekNumber,
+            'request_week_target' => $weekNumber,
+            'week_label_check' => $weekLabel,
+            'week_label_value' => $weekLabel,
+            'group_code_check' => $groupCode,
+            'group_code_value' => $groupCode,
+            'touch_processed_flag' => $touchProcessedAt ? 1 : 0,
+        ]);
+    }
+
+    public function logTrainerChangeRequestActivity(array $request, string $status, ?string $note = null): void
+    {
         $activityInsert = $this->db->prepare(
             'INSERT INTO recent_activities (formateur_id, module_id, action_label, action_tone, action_description)
              VALUES (:formateur_id, :module_id, :action_label, :action_tone, :action_description)'
         );
         $activityInsert->execute([
-            'formateur_id' => intval($row['formateur_id']),
-            'module_id' => intval($row['module_id']),
-            'action_label' => $status === 'approved' ? 'Demande planning approuvee' : 'Demande planning refusee',
-            'action_tone' => $status === 'approved' ? 'success' : 'danger',
+            'formateur_id' => intval($request['formateur_id']),
+            'module_id' => intval($request['module_id']),
+            'action_label' => $status === 'validated' ? 'Demande planning validee' : 'Demande planning refusee',
+            'action_tone' => $status === 'validated' ? 'success' : 'danger',
             'action_description' => $note && trim($note) !== ''
                 ? trim($note)
                 : sprintf(
                     'La demande concernant %s pour %s a ete %s.',
-                    $row['module_code'],
-                    $row['semaine'],
-                    $status === 'approved' ? 'approuvee' : 'refusee'
+                    $request['module_code'],
+                    $request['semaine'],
+                    $status === 'validated' ? 'validee' : 'refusee'
                 ),
         ]);
-
-        return [
-            'id' => intval($row['id']),
-            'status' => $status,
-        ];
     }
 
     public function getTrainerTimelineEvents(int $formateurId, int $annee): array
@@ -637,14 +906,22 @@ class DashboardRepository
         ]);
 
         foreach ($requestStmt->fetchAll() as $row) {
-            $tone = $row['status'] === 'approved' ? 'success' : ($row['status'] === 'rejected' ? 'danger' : 'warning');
+            $tone = $row['status'] === 'planned'
+                ? 'info'
+                : ($row['status'] === 'validated'
+                    ? 'success'
+                    : ($row['status'] === 'rejected' ? 'danger' : 'warning'));
             $events[] = [
                 'id' => 'request-' . intval($row['id']),
                 'type' => 'request',
                 'tone' => $tone,
                 'title' => sprintf(
                     'Demande %s pour %s',
-                    $row['status'] === 'approved' ? 'approuvee' : ($row['status'] === 'rejected' ? 'refusee' : 'en attente'),
+                    $row['status'] === 'planned'
+                        ? 'planifiee'
+                        : ($row['status'] === 'validated'
+                            ? 'validee'
+                            : ($row['status'] === 'rejected' ? 'refusee' : 'en attente')),
                     $row['module_code']
                 ),
                 'message' => sprintf('%s · %s', $row['intitule'], $row['semaine']),
@@ -663,7 +940,7 @@ class DashboardRepository
                 COALESCE(m.code, CONCAT("M", LPAD(m.id, 3, "0"))) AS module_code
              FROM recent_activities ra
              LEFT JOIN modules m ON m.id = ra.module_id
-             WHERE ra.formateur_id = :formateur_id OR ra.formateur_id IS NULL
+             WHERE ra.formateur_id = :formateur_id
              ORDER BY ra.created_at DESC
              LIMIT 8'
         );

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Card } from '../ui/Card';
@@ -41,7 +41,7 @@ export function useChefToasts() {
     };
   }, []);
 
-  const dismissToast = (id) => {
+  const dismissToast = useCallback((id) => {
     const timeoutId = timeoutRef.current.get(id);
     if (timeoutId) {
       window.clearTimeout(timeoutId);
@@ -49,9 +49,9 @@ export function useChefToasts() {
     }
 
     setToasts((current) => current.filter((toast) => toast.id !== id));
-  };
+  }, []);
 
-  const pushToast = (toast) => {
+  const pushToast = useCallback((toast) => {
     const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const nextToast = {
       id,
@@ -63,7 +63,7 @@ export function useChefToasts() {
     setToasts((current) => [...current, nextToast]);
     const timeoutId = window.setTimeout(() => dismissToast(id), 3600);
     timeoutRef.current.set(id, timeoutId);
-  };
+  }, [dismissToast]);
 
   return { toasts, pushToast, dismissToast };
 }

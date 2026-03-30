@@ -79,6 +79,36 @@ body {
     box-shadow 0.3s ease;
 }
 
+@keyframes theme-switch-flash {
+  0% {
+    opacity: 0;
+  }
+  35% {
+    opacity: 0.08;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+html.theme-switching *,
+html.theme-switching *::before,
+html.theme-switching *::after {
+  transition: none !important;
+}
+
+html.theme-switching body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--color-primary) 16%, transparent), transparent 28%),
+    linear-gradient(180deg, color-mix(in srgb, var(--color-bg-elevated) 35%, transparent), transparent 72%);
+  animation: theme-switch-flash 180ms ease-out;
+}
+
 #root {
   min-height: 100vh;
 }
@@ -511,6 +541,38 @@ html[data-theme='dark'] .chef-reports-page .chef-report-summary-value {
   color: #ffffff !important;
 }
 
+.report-format-pill {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.report-download-button {
+  color: var(--color-text-soft);
+  background: var(--color-card-muted);
+  border-color: var(--color-border);
+  box-shadow: 0 10px 22px var(--color-shadow);
+}
+
+.report-download-button:hover {
+  background: var(--color-hover);
+}
+
+html[data-theme='dark'] .report-format-pill {
+  background: rgba(96, 165, 250, 0.14) !important;
+  color: #93c5fd !important;
+}
+
+html[data-theme='dark'] .report-download-button {
+  color: #e2e8f0 !important;
+  background: #1b2740 !important;
+  border-color: rgba(148, 163, 184, 0.24) !important;
+  box-shadow: 0 18px 36px rgba(2, 6, 23, 0.42);
+}
+
+html[data-theme='dark'] .report-download-button:hover {
+  background: #22314d !important;
+}
+
 .director-report-action--secondary {
   box-shadow: 0 10px 22px rgba(15, 23, 42, 0.06);
 }
@@ -614,4 +676,37 @@ html[data-theme='dark'] .formateur-dashboard-page :where(
   .text-\[\#8c9bb0\]
 ) {
   color: #cbd5e1 !important;
+}
+
+/*
+ * Keep exported planning PDFs on a white print palette even if the app is
+ * currently rendered in dark mode.
+ */
+html[data-theme='dark'] .planning-pdf-export,
+html[data-theme='dark'] .planning-pdf-export * {
+  color-scheme: light !important;
+}
+
+html[data-theme='dark'] .planning-pdf-export {
+  background: #ffffff !important;
+  color: #000000 !important;
+}
+
+html[data-theme='dark'] .planning-pdf-export .bg-white,
+html[data-theme='dark'] .planning-pdf-export [class*='bg-white'] {
+  background-color: #ffffff !important;
+}
+
+html[data-theme='dark'] .planning-pdf-export .text-black,
+html[data-theme='dark'] .planning-pdf-export [class*='text-black'] {
+  color: #000000 !important;
+}
+
+html[data-theme='dark'] .planning-pdf-export .border-black,
+html[data-theme='dark'] .planning-pdf-export [class*='border-black'] {
+  border-color: #000000 !important;
+}
+
+html[data-theme='dark'] .planning-pdf-export img {
+  filter: none !important;
 }

@@ -28,7 +28,42 @@ function formatReportDate(value) {
   return `Genere le ${date.toLocaleDateString('fr-FR')}`;
 }
 
-function ExportCard({ icon: Icon, iconClassName, title, description, buttonClassName, buttonLabel, loading, onClick }) {
+function isPdfDependencyError(message) {
+  return typeof message === 'string' && message.toLowerCase().includes('generation pdf indisponible');
+}
+
+function groupReportsByType(reports) {
+  const grouped = new Map();
+
+  reports.forEach((report) => {
+    const key = report.type || report.title || `report-${report.id}`;
+    const current = grouped.get(key);
+
+    if (!current) {
+      grouped.set(key, {
+        key,
+        title: report.title || report.type || `Rapport #${report.id}`,
+        created_at: report.created_at,
+        formats: {
+          [report.format]: report,
+        },
+      });
+      return;
+    }
+
+    current.formats[report.format] = report;
+
+    if (new Date(report.created_at).getTime() > new Date(current.created_at).getTime()) {
+      current.created_at = report.created_at;
+    }
+  });
+
+  return Array.from(grouped.values()).sort(
+    (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
+  );
+}
+
+function ExportCard({ icon: Icon, iconClassName, title, description, actions = [] }) {
   return (
     <div className="rounded-[20px] border border-[#dbe5f2] bg-white px-6 py-6 shadow-[0_2px_6px_rgba(62,90,135,0.06)]">
       <div className="flex items-start gap-4">
@@ -41,15 +76,20 @@ function ExportCard({ icon: Icon, iconClassName, title, description, buttonClass
         </div>
       </div>
 
-      <button
-        type="button"
-        onClick={onClick}
-        disabled={loading}
-        className={`mt-8 inline-flex h-[38px] w-full items-center justify-center rounded-[8px] text-[14px] font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-70 ${buttonClassName}`}
-      >
-        <Download className="mr-2 h-4 w-4" />
-        {loading ? 'Generation...' : buttonLabel}
-      </button>
+      <div className="mt-8 grid gap-3 sm:grid-cols-2">
+        {actions.map((action) => (
+          <button
+            key={action.key}
+            type="button"
+            onClick={action.onClick}
+            disabled={action.loading}
+            className={`inline-flex h-[38px] w-full items-center justify-center rounded-[8px] text-[14px] font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-70 ${action.buttonClassName}`}
+          >
+            <Download className="mr-2 h-4 w-4" />
+            {action.loading ? 'Generation...' : action.buttonLabel}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -62,6 +102,8 @@ export default function RapportsChef() {
   const [loading, setLoading] = useState(true);
   const [generatingKey, setGeneratingKey] = useState('');
   const [error, setError] = useState('');
+
+  const visibleReportTypes = ['workload', 'assignment_coverage'];
 
   const loadData = async () => {
     try {
@@ -104,11 +146,14 @@ export default function RapportsChef() {
     window.URL.revokeObjectURL(url);
   };
 
-  const handleGenerate = async (format) => {
+  const handleGenerate = async (type, format) => {
     try {
-      setGeneratingKey(format);
+      setGeneratingKey(`${type}-${format}`);
       setError('');
-      const report = await ReportService.generateWorkload(format);
+      const report =
+        type === 'workload'
+          ? await ReportService.generateWorkload(format)
+          : await ReportService.generateAssignmentCoverage(format);
       await downloadBlobReport(report);
       await loadData();
     } catch (generateError) {
@@ -120,9 +165,12 @@ export default function RapportsChef() {
 
   const handleDownload = async (report) => {
     try {
+      setGeneratingKey(`download-${report.id}`);
       await downloadBlobReport(report);
     } catch (downloadError) {
       setError(downloadError?.message || 'Le rapport n a pas pu etre telecharge.');
+    } finally {
+      setGeneratingKey('');
     }
   };
 
@@ -133,6 +181,10 @@ export default function RapportsChef() {
       totalHeures: dashboard?.overview?.total_module_hours || 0,
     };
   }, [dashboard, formateurs.length, modules.length]);
+
+  const visibleReports = groupReportsByType(
+    reports.filter((report) => visibleReportTypes.includes(report.type)),
+  );
 
   if (loading) {
     return (
@@ -150,6 +202,10 @@ export default function RapportsChef() {
           <p className="mt-1 text-[16px] text-[#6f7f95]">Generer et exporter des rapports</p>
         </div>
 
+        <div className="rounded-[20px] border border-[#dbe5f2] bg-white px-5 py-4 text-[14px] text-[#62748f] shadow-[0_2px_6px_rgba(62,90,135,0.06)]">
+          Les exports PDF et Excel sont disponibles pour les rapports opérationnels du pôle.
+        </div>
+
         {error ? (
           <div className="rounded-[20px] border border-[#ffd5d5] bg-white px-5 py-4 text-[15px] font-semibold text-[#ca4646]">
             {error}
@@ -160,24 +216,54 @@ export default function RapportsChef() {
           <ExportCard
             icon={FileText}
             iconClassName="bg-[linear-gradient(180deg,_#ff4b2b_0%,_#ff3d14_100%)]"
-            title="Export PDF"
-            description="Rapport complet au format PDF"
-            buttonClassName="bg-[#ff2f3a] hover:bg-[#f3212d]"
-            buttonLabel="Telecharger PDF"
-            loading={generatingKey === 'pdf'}
-            onClick={() => handleGenerate('pdf')}
+            title="Charge enseignants"
+            description="Rapport complet de charge des formateurs du pôle"
+            actions={[
+              {
+                key: 'workload-pdf',
+                buttonClassName: 'bg-[#ff2f3a] hover:bg-[#f3212d]',
+                buttonLabel: 'Telecharger PDF',
+                loading: generatingKey === 'workload-pdf',
+                onClick: () => handleGenerate('workload', 'pdf'),
+              },
+              {
+                key: 'workload-xlsx',
+                buttonClassName: 'bg-[#08c746] hover:bg-[#05b23e]',
+                buttonLabel: 'Telecharger Excel',
+                loading: generatingKey === 'workload-xlsx',
+                onClick: () => handleGenerate('workload', 'xlsx'),
+              },
+            ]}
           />
           <ExportCard
-            icon={FileSpreadsheet}
-            iconClassName="bg-[linear-gradient(180deg,_#10c754_0%,_#09b947_100%)]"
-            title="Export Excel"
-            description="Donnees brutes au format Excel"
-            buttonClassName="bg-[#08c746] hover:bg-[#05b23e]"
-            buttonLabel="Telecharger Excel"
-            loading={generatingKey === 'xlsx'}
-            onClick={() => handleGenerate('xlsx')}
+            icon={FileText}
+            iconClassName="bg-[linear-gradient(180deg,_#3269ff_0%,_#234fe0_100%)]"
+            title="Couverture affectations"
+            description="Modules affectes ou libres avec formateurs et groupes"
+            actions={[
+              {
+                key: 'assignment-coverage-pdf',
+                buttonClassName: 'bg-[#2c59e8] hover:bg-[#2148c6]',
+                buttonLabel: 'Telecharger PDF',
+                loading: generatingKey === 'assignment-coverage-pdf',
+                onClick: () => handleGenerate('assignment-coverage', 'pdf'),
+              },
+              {
+                key: 'assignment-coverage-xlsx',
+                buttonClassName: 'bg-[#d88708] hover:bg-[#b77005]',
+                buttonLabel: 'Telecharger Excel',
+                loading: generatingKey === 'assignment-coverage-xlsx',
+                onClick: () => handleGenerate('assignment-coverage', 'xlsx'),
+              },
+            ]}
           />
         </div>
+
+        {isPdfDependencyError(error) ? (
+          <div className="rounded-[20px] border border-[#ffe1a8] bg-[#fff8e8] px-5 py-4 text-[14px] font-medium text-[#986200]">
+            Le backend répond correctement, mais le PDF a besoin de `backend/vendor`. L export Excel continue de fonctionner.
+          </div>
+        ) : null}
 
         <div className="rounded-[20px] border border-[#dbe5f2] bg-white px-6 py-5 shadow-[0_2px_6px_rgba(62,90,135,0.06)]">
           <h2 className="text-[16px] font-semibold text-[#1d2435]">Resume</h2>
@@ -202,27 +288,52 @@ export default function RapportsChef() {
           <h2 className="text-[16px] font-semibold text-[#1d2435]">Rapports Recents</h2>
 
           <div className="mt-6 space-y-4">
-            {reports.length ? (
-              reports.map((report) => (
+            {visibleReports.length ? (
+              visibleReports.map((reportGroup) => (
                 <div
-                  key={report.id}
+                  key={reportGroup.key}
                   className="flex items-center justify-between gap-4 rounded-[14px] border border-[#e2e8f2] bg-white px-4 py-4"
                 >
                   <div className="min-w-0">
                     <p className="truncate text-[17px] font-semibold text-[#1b2232]">
-                      {report.title || report.type || `Rapport #${report.id}`}
+                      {reportGroup.title}
                     </p>
-                    <p className="mt-1 text-[15px] text-[#7c879b]">{formatReportDate(report.created_at)}</p>
+                    <p className="mt-1 text-[15px] text-[#7c879b]">{formatReportDate(reportGroup.created_at)}</p>
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handleDownload(report)}
-                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-[#263246] transition hover:bg-[#f4f7fb]"
-                    title="Telecharger"
-                  >
-                    <Download className="h-5 w-5" />
-                  </button>
+                  <div className="flex items-center gap-3">
+                    {reportGroup.formats.pdf ? (
+                      <>
+                        <span className="report-format-pill rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.08em]">
+                          PDF
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleDownload(reportGroup.formats.pdf)}
+                          disabled={generatingKey === `download-${reportGroup.formats.pdf.id}`}
+                          className="report-download-button inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] transition disabled:opacity-60"
+                          title="Telecharger PDF"
+                        >
+                          <Download className="h-5 w-5" />
+                        </button>
+                      </>
+                    ) : null}
+                    {reportGroup.formats.xlsx ? (
+                      <>
+                        <span className="report-format-pill rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.08em]">
+                          Excel
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleDownload(reportGroup.formats.xlsx)}
+                          disabled={generatingKey === `download-${reportGroup.formats.xlsx.id}`}
+                          className="report-download-button inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] transition disabled:opacity-60"
+                          title="Telecharger Excel"
+                        >
+                          <Download className="h-5 w-5" />
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
                 </div>
               ))
             ) : (

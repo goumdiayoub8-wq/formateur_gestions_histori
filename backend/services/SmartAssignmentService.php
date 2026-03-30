@@ -13,6 +13,8 @@ require_once __DIR__ . '/../core/helpers.php';
 
 class SmartAssignmentService
 {
+    private const MAX_WEEKLY_HOURS = 44.0;
+
     private PDO $db;
     private SmartAssignmentRepository $smart;
     private AffectationRepository $affectations;
@@ -20,6 +22,9 @@ class SmartAssignmentService
     private PlanningRepository $planning;
     private ModuleRepository $modules;
     private ValidationService $validation;
+    private array $competenceLevelCache = [];
+    private array $experienceCountCache = [];
+    private array $availabilityCache = [];
 
     public function __construct(PDO $db)
     {
@@ -39,29 +44,73 @@ class SmartAssignmentService
             throw new NotFoundException('Module not found');
         }
 
+        $academicYear = currentAcademicYear();
+        $currentWeek = currentAcademicWeek();
+        $trainers = $this->smart->listTrainersForSuggestions($academicYear, $currentWeek);
+        $trainerIds = array_map(static fn(array $trainer): int => intval($trainer['id']), $trainers);
+        $assignedModulesByTrainer = $this->smart->getAssignedModuleCodesMap(
+            $trainerIds,
+            $academicYear
+        );
+        $competenceLevels = $this->smart->getCompetenceLevelsForModule($trainerIds, intval($module['id']));
+        $experienceCounts = $this->smart->getExperienceCountsForFiliere($trainerIds, (string) ($module['filiere'] ?? ''), $academicYear);
+
         $rows = [];
-        foreach ($this->smart->listTrainersForSuggestions() as $trainer) {
-            if (!$this->isEligibleTrainer($trainer, $module)) {
+        foreach ($trainers as $trainer) {
+            $trainerId = intval($trainer['id']);
+            $competenceLevel = $this->resolveCompetenceLevel($trainer, $module, $competenceLevels[$trainerId] ?? null);
+            $availability = $this->buildAvailabilitySnapshot($trainer, $module);
+
+            if (!$this->isEligibleTrainer($trainer, $module, $competenceLevel, $availability, $academicYear)) {
                 continue;
             }
 
-            [$score, $reason] = $this->resolveScore($trainer, $module);
+            [$score, $reason] = $this->resolveScore(
+                $trainer,
+                $module,
+                $competenceLevel,
+                $experienceCounts[$trainerId] ?? 0,
+                $availability
+            );
             $rows[] = [
                 'trainer' => $trainer,
+                'trainer_id' => $trainerId,
                 'score' => $score,
                 'reason' => $reason,
+                'modules' => $assignedModulesByTrainer[intval($trainer['id'])] ?? [],
+                'remaining_hours' => $availability['remaining_hours'],
+                'current_week_hours' => $availability['current_week_hours'],
+                'source_index' => count($rows),
             ];
         }
 
-        usort($rows, static fn(array $left, array $right): int => $right['score'] <=> $left['score']);
+        usort($rows, static function (array $left, array $right): int {
+            if ($left['score'] !== $right['score']) {
+                return $right['score'] <=> $left['score'];
+            }
+
+            if ($left['remaining_hours'] !== $right['remaining_hours']) {
+                return $right['remaining_hours'] <=> $left['remaining_hours'];
+            }
+
+            if ($left['current_week_hours'] !== $right['current_week_hours']) {
+                return $left['current_week_hours'] <=> $right['current_week_hours'];
+            }
+
+            if ($left['trainer_id'] !== $right['trainer_id']) {
+                return $left['trainer_id'] <=> $right['trainer_id'];
+            }
+
+            return $left['source_index'] <=> $right['source_index'];
+        });
 
         return array_map(function (array $row, int $index): array {
             $candidate = new SmartAssignmentCandidate(
                 intval($row['trainer']['id']),
                 $row['trainer']['nom'],
                 $row['trainer']['specialite'],
-                $this->smart->getAssignedModuleCodes(intval($row['trainer']['id'])),
-                $this->remainingHours($row['trainer']),
+                $row['modules'],
+                $row['remaining_hours'],
                 $row['score'],
                 $index === 0 ? 'best_match' : 'recommended',
                 $row['reason']
@@ -131,7 +180,7 @@ class SmartAssignmentService
                 'annee' => currentAcademicYear(),
             ]);
 
-            $this->smart->updateTrainerCurrentHours($formateurId);
+            $this->smart->updateTrainerCurrentHours($formateurId, currentAcademicYear());
             $this->smart->clearScoreCacheForTrainer($formateurId);
             $this->smart->clearScoreCacheForModule($moduleId);
 
@@ -147,48 +196,69 @@ class SmartAssignmentService
         return ['success' => true];
     }
 
-    private function resolveScore(array $trainer, array $module): array
+    private function resolveScore(
+        array $trainer,
+        array $module,
+        ?int $competenceLevelOverride = null,
+        ?int $experienceCountOverride = null,
+        ?array $availabilityOverride = null
+    ): array
     {
         $trainerId = intval($trainer['id']);
-        $moduleId = intval($module['id']);
-        $cached = $this->smart->getCachedScore($trainerId, $moduleId);
-        if ($cached) {
-            return [floatval($cached['score']), $cached['reason']];
-        }
-
-        $competenceLevel = $this->resolveCompetenceLevel($trainer, $module);
+        $competenceLevel = $this->resolveCompetenceLevel($trainer, $module, $competenceLevelOverride);
         $competenceScore = ($competenceLevel / 5) * 100;
 
-        $remainingHours = $this->remainingHours($trainer);
-        $maxHours = max(1.0, floatval($trainer['max_heures']));
-        $availabilityScore = max(0.0, min(100.0, ($remainingHours / $maxHours) * 100));
+        $questionnaireScore = $trainer['questionnaire_percentage'] !== null
+            ? max(0.0, min(100.0, floatval($trainer['questionnaire_percentage'])))
+            : $competenceScore;
 
-        $experienceCount = $this->smart->countExperienceForTrainer($trainerId, $module['filiere']);
+        $availability = $availabilityOverride ?? $this->buildAvailabilitySnapshot($trainer, $module);
+        $remainingHours = $availability['remaining_hours'];
+        $currentWeekHours = $availability['current_week_hours'];
+        $projectedWeeklyHours = $availability['projected_weekly_hours'];
+        $weeklyTargetHours = $availability['weekly_capacity_hours'];
+        $availabilityScore = $availability['availability_score'];
+
+        $experienceCount = $experienceCountOverride ?? $this->resolveExperienceCount($trainerId, (string) ($module['filiere'] ?? ''));
         $experienceScore = min(100.0, $experienceCount * 25);
         if ($experienceScore < 40 && $competenceLevel >= 4) {
             $experienceScore = 40;
         }
 
-        $score = ($competenceScore * 0.5) + ($availabilityScore * 0.3) + ($experienceScore * 0.2);
+        $score = ($questionnaireScore * 0.4) + ($availabilityScore * 0.35) + ($competenceScore * 0.15) + ($experienceScore * 0.1);
         $reason = (new SmartAssignmentReason(
+            $questionnaireScore,
             $competenceScore,
             $availabilityScore,
             $experienceScore,
             $competenceLevel,
             $remainingHours,
-            $experienceCount
+            $experienceCount,
+            $currentWeekHours,
+            $projectedWeeklyHours,
+            $weeklyTargetHours
         ))->toArray();
-
-        $this->smart->cacheScore($trainerId, $moduleId, $score, $reason);
 
         return [round($score, 2), $reason];
     }
 
-    private function resolveCompetenceLevel(array $trainer, array $module): int
+    private function resolveCompetenceLevel(array $trainer, array $module, ?int $mappedLevel = null): int
     {
+        if ($mappedLevel !== null) {
+            return max(1, min(5, $mappedLevel));
+        }
+
+        $cacheKey = intval($trainer['id']) . ':' . intval($module['id']);
+        if (array_key_exists($cacheKey, $this->competenceLevelCache)) {
+            return $this->competenceLevelCache[$cacheKey];
+        }
+
         $mapped = $this->smart->getCompetenceLevel(intval($trainer['id']), intval($module['id']));
         if ($mapped !== null) {
-            return max(1, min(5, $mapped));
+            $resolved = max(1, min(5, $mapped));
+            $this->competenceLevelCache[$cacheKey] = $resolved;
+
+            return $resolved;
         }
 
         $specialite = mb_strtolower(trim((string) ($trainer['specialite'] ?? '')));
@@ -199,6 +269,8 @@ class SmartAssignmentService
         ])));
 
         if ($specialite !== '' && str_contains($haystack, $specialite)) {
+            $this->competenceLevelCache[$cacheKey] = 4;
+
             return 4;
         }
 
@@ -212,41 +284,125 @@ class SmartAssignmentService
         }
 
         if (str_contains($haystack, 'qa') && str_contains($specialite, 'qa')) {
+            $this->competenceLevelCache[$cacheKey] = 4;
+
             return 4;
         }
+
+        $this->competenceLevelCache[$cacheKey] = 2;
 
         return 2;
     }
 
     private function remainingHours(array $trainer): float
     {
-        $max = floatval($trainer['max_heures'] ?? 910);
-        $current = array_key_exists('current_hours', $trainer)
-            ? floatval($trainer['current_hours'])
-            : floatval($this->affectations->getTrainerAnnualHours(intval($trainer['id']), currentAcademicYear()));
-
-        return max(0.0, round($max - $current, 2));
+        return $this->buildAvailabilitySnapshot($trainer)['remaining_hours'];
     }
 
-    private function isEligibleTrainer(array $trainer, array $module): bool
+    private function isEligibleTrainer(
+        array $trainer,
+        array $module,
+        ?int $competenceLevel = null,
+        ?array $availability = null,
+        ?int $academicYear = null
+    ): bool
     {
         $trainerId = intval($trainer['id']);
         $moduleId = intval($module['id']);
+        $resolvedCompetenceLevel = $this->resolveCompetenceLevel($trainer, $module, $competenceLevel);
+        $resolvedAvailability = $availability ?? $this->buildAvailabilitySnapshot($trainer, $module);
 
-        if ($this->resolveCompetenceLevel($trainer, $module) < 2) {
+        if ($resolvedCompetenceLevel < 2) {
             return false;
         }
 
-        if ($this->remainingHours($trainer) < floatval($module['volume_horaire'])) {
+        if ($resolvedAvailability['remaining_hours'] < floatval($module['volume_horaire'])) {
+            return false;
+        }
+
+        if ($resolvedAvailability['weekly_headroom_after_assignment'] < 0) {
             return false;
         }
 
         try {
-            $this->validation->validateAssignment($trainerId, $moduleId, currentAcademicYear());
+            $this->validation->validateAssignment($trainerId, $moduleId, $academicYear ?? currentAcademicYear());
 
             return true;
         } catch (HttpException $exception) {
             return false;
         }
+    }
+
+    private function buildAvailabilitySnapshot(array $trainer, ?array $module = null): array
+    {
+        $trainerId = intval($trainer['id'] ?? 0);
+        $moduleId = intval($module['id'] ?? 0);
+        $cacheKey = $trainerId . ':' . $moduleId;
+
+        if (array_key_exists($cacheKey, $this->availabilityCache)) {
+            return $this->availabilityCache[$cacheKey];
+        }
+
+        $maxHours = max(1.0, $this->normalizeFloat($trainer['max_heures'] ?? 910, 910.0));
+        $currentHours = array_key_exists('current_hours', $trainer)
+            ? $this->normalizeFloat($trainer['current_hours'])
+            : $this->normalizeFloat($this->affectations->getTrainerAnnualHours($trainerId, currentAcademicYear()));
+        $remainingHours = max(0.0, round($maxHours - $currentHours, 2));
+        $moduleHours = max(0.0, $this->normalizeFloat($module['volume_horaire'] ?? 0));
+        $projectedWeeklyHours = $moduleHours > 0
+            ? round($moduleHours / max(1, ACADEMIC_WEEKS), 2)
+            : 0.0;
+        $currentWeekHours = max(0.0, round($this->normalizeFloat($trainer['current_week_hours'] ?? 0), 2));
+        $configuredWeeklyTargetHours = max(0.0, round($this->normalizeFloat($trainer['weekly_hours_target'] ?? 0), 2));
+        $weeklyCapacityHours = $configuredWeeklyTargetHours > 0
+            ? min(self::MAX_WEEKLY_HOURS, $configuredWeeklyTargetHours)
+            : self::MAX_WEEKLY_HOURS;
+        $annualRemainingAfterAssignment = max(0.0, round($remainingHours - $moduleHours, 2));
+        $annualAvailabilityScore = max(0.0, min(100.0, ($annualRemainingAfterAssignment / $maxHours) * 100));
+        $weeklyHeadroomAfterAssignment = round($weeklyCapacityHours - $currentWeekHours - $projectedWeeklyHours, 2);
+        $weeklyAvailabilityScore = $weeklyCapacityHours > 0
+            ? max(0.0, min(100.0, (max(0.0, $weeklyHeadroomAfterAssignment) / $weeklyCapacityHours) * 100))
+            : 0.0;
+
+        $snapshot = [
+            'remaining_hours' => $remainingHours,
+            'current_hours' => round($currentHours, 2),
+            'module_hours' => round($moduleHours, 2),
+            'current_week_hours' => $currentWeekHours,
+            'projected_weekly_hours' => $projectedWeeklyHours,
+            'configured_weekly_target_hours' => $configuredWeeklyTargetHours,
+            'weekly_capacity_hours' => round($weeklyCapacityHours, 2),
+            'annual_remaining_after_assignment' => $annualRemainingAfterAssignment,
+            'weekly_headroom_after_assignment' => $weeklyHeadroomAfterAssignment,
+            'annual_availability_score' => round($annualAvailabilityScore, 2),
+            'weekly_availability_score' => round($weeklyAvailabilityScore, 2),
+            'availability_score' => round(($annualAvailabilityScore * 0.7) + ($weeklyAvailabilityScore * 0.3), 2),
+        ];
+
+        $this->availabilityCache[$cacheKey] = $snapshot;
+
+        return $snapshot;
+    }
+
+    private function resolveExperienceCount(int $trainerId, string $filiere): int
+    {
+        $cacheKey = $trainerId . ':' . strtolower(trim($filiere));
+        if (array_key_exists($cacheKey, $this->experienceCountCache)) {
+            return $this->experienceCountCache[$cacheKey];
+        }
+
+        $count = $this->smart->countExperienceForTrainer($trainerId, $filiere);
+        $this->experienceCountCache[$cacheKey] = $count;
+
+        return $count;
+    }
+
+    private function normalizeFloat($value, float $default = 0.0): float
+    {
+        if ($value === null || $value === '') {
+            return $default;
+        }
+
+        return floatval($value);
     }
 }

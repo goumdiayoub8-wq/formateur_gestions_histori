@@ -57,6 +57,7 @@ CREATE TABLE `formateurs` (
   `telephone` varchar(40) DEFAULT NULL,
   `specialite` varchar(120) NOT NULL,
   `max_heures` int NOT NULL DEFAULT 910,
+  `weekly_hours` decimal(5,2) DEFAULT NULL,
   `current_hours` decimal(8,2) NOT NULL DEFAULT 0.00,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT NULL,
@@ -196,6 +197,9 @@ CREATE TABLE `planning_submissions` (
   `processed_at` datetime DEFAULT NULL,
   `processed_by` int DEFAULT NULL,
   `decision_note` varchar(255) DEFAULT NULL,
+  `snapshot_entries` longtext DEFAULT NULL,
+  `snapshot_total_hours` decimal(6,2) DEFAULT NULL,
+  `snapshot_captured_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_planning_submissions_formateur_year_status` (`formateur_id`,`academic_year`,`status`),
   KEY `idx_planning_submissions_processed_by` (`processed_by`),
@@ -216,7 +220,7 @@ CREATE TABLE `planning_change_requests` (
   `request_week` int DEFAULT NULL,
   `academic_year` int NOT NULL,
   `reason` varchar(500) NOT NULL,
-  `status` enum('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+  `status` enum('pending','validated','planned','rejected') NOT NULL DEFAULT 'pending',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT NULL,
   `processed_at` datetime DEFAULT NULL,
@@ -423,11 +427,11 @@ VALUES
   (1, '2025-09-15', '2026-07-15', '2026-02-02', '2026-04-20', '2026-06-05', '2026-06-20', '2025-09-01 09:00:00', NULL);
 
 INSERT INTO `formateurs`
-  (`id`, `nom`, `email`, `telephone`, `specialite`, `max_heures`, `current_hours`, `created_at`, `updated_at`)
+  (`id`, `nom`, `email`, `telephone`, `specialite`, `max_heures`, `weekly_hours`, `current_hours`, `created_at`, `updated_at`)
 VALUES
-  (1, 'Yassine Benali', 'formateur@test.com', '+212600000001', 'Développement Web', 910, 140.00, '2025-09-10 08:00:00', NULL),
-  (2, 'Salma Alaoui', 'salma.alaoui@test.com', '+212600000002', 'UX/UI Design', 910, 80.00, '2025-09-10 08:05:00', NULL),
-  (3, 'Hamza Tazi', 'hamza.tazi@test.com', '+212600000003', 'Data & IA', 910, 70.00, '2025-09-10 08:10:00', NULL);
+  (1, 'Yassine Benali', 'formateur@test.com', '+212600000001', 'Développement Web', 910, 24.00, 140.00, '2025-09-10 08:00:00', NULL),
+  (2, 'Salma Alaoui', 'salma.alaoui@test.com', '+212600000002', 'UX/UI Design', 910, 20.00, 80.00, '2025-09-10 08:05:00', NULL),
+  (3, 'Hamza Tazi', 'hamza.tazi@test.com', '+212600000003', 'Data & IA', 910, 18.00, 70.00, '2025-09-10 08:10:00', NULL);
 
 INSERT INTO `modules`
   (`id`, `code`, `intitule`, `filiere`, `semestre`, `volume_horaire`, `has_efm`, `created_at`, `updated_at`)
@@ -501,7 +505,7 @@ INSERT INTO `planning_change_requests`
   (`id`, `formateur_id`, `module_id`, `groupe_code`, `semaine`, `request_week`, `academic_year`, `reason`, `status`, `created_at`, `updated_at`, `processed_at`)
 VALUES
   (1, 1, 2, 'DEV-2', 'Semaine 11', 11, 2026, 'Confirmation du créneau du mardi après-midi.', 'pending', '2025-11-28 09:00:00', NULL, NULL),
-  (2, 2, 3, 'DESIGN-1', 'Semaine 10', 10, 2026, 'Décalage accepté après validation du chef de pôle.', 'approved', '2025-11-21 09:00:00', '2025-11-21 12:00:00', '2025-11-21 12:00:00');
+  (2, 2, 3, 'DESIGN-1', 'Semaine 10', 10, 2026, 'Décalage accepté après validation du chef de pôle.', 'validated', '2025-11-21 09:00:00', '2025-11-21 12:00:00', '2025-11-21 12:00:00');
 
 INSERT INTO `planning_sessions`
   (`id`, `formateur_id`, `module_id`, `groupe_id`, `salle_id`, `week_number`, `week_start_date`, `week_end_date`, `day_of_week`, `start_time`, `end_time`, `session_date`, `status`, `task_title`, `task_description`, `note_formateur`, `chef_response`, `change_request_note`, `confirmed_at`, `validated_at`, `validated_by`, `created_at`, `updated_at`)

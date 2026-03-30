@@ -1,4 +1,4 @@
-import api, { apiRequest } from './api';
+import api, { apiRequest, buildApiUrl } from './api';
 
 const REPORTS_BASE = '/reports';
 
@@ -26,8 +26,24 @@ const ReportService = {
     });
   },
 
+  generateAssignmentCoverage(format) {
+    return apiRequest({
+      url: `${REPORTS_BASE}?action=generate-assignment-coverage`,
+      method: 'post',
+      data: { format },
+    });
+  },
+
+  generateValidationStatus(format) {
+    return apiRequest({
+      url: `${REPORTS_BASE}?action=generate-validation-status`,
+      method: 'post',
+      data: { format },
+    });
+  },
+
   async download(id) {
-    const response = await api.get(`${REPORTS_BASE}?action=download`, {
+    const response = await api.get(buildApiUrl(`${REPORTS_BASE}?action=download`), {
       params: { id },
       responseType: 'blob',
     });

@@ -1,27 +1,79 @@
 <?php
 
+require_once __DIR__ . '/../core/helpers.php';
+
 class SmartAssignmentRepository
 {
     private PDO $db;
+    private ?bool $hasWeeklyHoursColumn = null;
 
     public function __construct(PDO $db)
     {
         $this->db = $db;
     }
 
-    public function listTrainersForSuggestions(): array
+    private function hasWeeklyHoursColumn(): bool
     {
-        $stmt = $this->db->query(
+        if ($this->hasWeeklyHoursColumn !== null) {
+            return $this->hasWeeklyHoursColumn;
+        }
+
+        $stmt = $this->db->query("SHOW COLUMNS FROM formateurs LIKE 'weekly_hours'");
+        $this->hasWeeklyHoursColumn = (bool) $stmt->fetch();
+
+        return $this->hasWeeklyHoursColumn;
+    }
+
+    private function weeklyHoursSelect(string $alias = 'f'): string
+    {
+        if ($this->hasWeeklyHoursColumn()) {
+            return "COALESCE({$alias}.weekly_hours, 0)";
+        }
+
+        return '0';
+    }
+
+    public function listTrainersForSuggestions(int $annee, int $week): array
+    {
+        $plannedHoursExpression = planningSessionHoursExpression('weekly_sessions');
+        $validatedPlanningCondition = validatedPlanningSessionExistsCondition('weekly_sessions', 'weekly_submissions', $annee);
+        $stmt = $this->db->prepare(
             'SELECT
                 f.id,
                 f.nom,
                 f.email,
                 f.specialite,
                 f.max_heures,
-                COALESCE(f.current_hours, 0) AS current_hours
+                COALESCE(workload.current_hours, 0) AS current_hours,
+                COALESCE(weekly.weekly_hours, 0) AS current_week_hours,
+                ' . $this->weeklyHoursSelect('f') . ' AS weekly_hours_target,
+                CASE WHEN s.id IS NULL THEN NULL ELSE ROUND(s.percentage, 2) END AS questionnaire_percentage
              FROM formateurs f
-             ORDER BY f.nom'
+             LEFT JOIN (
+                SELECT
+                    a.formateur_id,
+                    COALESCE(SUM(m.volume_horaire), 0) AS current_hours
+                FROM affectations a
+                INNER JOIN modules m ON m.id = a.module_id
+                WHERE a.annee = :annee_workload
+                GROUP BY a.formateur_id
+             ) workload ON workload.formateur_id = f.id
+             LEFT JOIN (
+                SELECT
+                    weekly_sessions.formateur_id,
+                    ' . $plannedHoursExpression . ' AS weekly_hours
+                FROM planning_sessions weekly_sessions
+                WHERE weekly_sessions.week_number = :week
+                  AND ' . $validatedPlanningCondition . '
+                GROUP BY weekly_sessions.formateur_id
+             ) weekly ON weekly.formateur_id = f.id
+             LEFT JOIN evaluation_scores s ON s.formateur_id = f.id
+             ORDER BY f.nom ASC, f.id ASC'
         );
+        $stmt->execute([
+            'annee_workload' => $annee,
+            'week' => $week,
+        ]);
 
         return $stmt->fetchAll();
     }
@@ -63,18 +115,143 @@ class SmartAssignmentRepository
         return (bool) $stmt->fetch();
     }
 
-    public function getAssignedModuleCodes(int $formateurId): array
+    public function getAssignedModuleCodes(int $formateurId, ?int $annee = null): array
+    {
+        $sql = 'SELECT COALESCE(m.code, CONCAT("M", LPAD(m.id, 3, "0"))) AS code
+             FROM affectations a
+             INNER JOIN modules m ON m.id = a.module_id
+             WHERE a.formateur_id = :formateur_id';
+        $params = ['formateur_id' => $formateurId];
+
+        if ($annee !== null) {
+            $sql .= ' AND a.annee = :annee';
+            $params['annee'] = $annee;
+        }
+
+        $sql .= ' ORDER BY m.code';
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+
+        return array_map(static fn(array $row): string => $row['code'], $stmt->fetchAll());
+    }
+
+    public function getAssignedModuleCodesMap(array $formateurIds, ?int $annee = null): array
+    {
+        $trainerIds = array_values(array_unique(array_filter(array_map('intval', $formateurIds))));
+        if ($trainerIds === []) {
+            return [];
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($trainerIds), '?'));
+        $sql = 'SELECT
+                    a.formateur_id,
+                    COALESCE(m.code, CONCAT("M", LPAD(m.id, 3, "0"))) AS code
+                FROM affectations a
+                INNER JOIN modules m ON m.id = a.module_id
+                WHERE a.formateur_id IN (' . $placeholders . ')';
+        $params = $trainerIds;
+
+        if ($annee !== null) {
+            $sql .= ' AND a.annee = ?';
+            $params[] = $annee;
+        }
+
+        $sql .= ' ORDER BY a.formateur_id ASC, m.code ASC, a.id ASC';
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+
+        $grouped = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $trainerId = intval($row['formateur_id'] ?? 0);
+            if (!isset($grouped[$trainerId])) {
+                $grouped[$trainerId] = [];
+            }
+
+            $grouped[$trainerId][] = $row['code'];
+        }
+
+        return $grouped;
+    }
+
+    public function getExperienceCountsForFiliere(array $formateurIds, string $filiere, int $annee): array
+    {
+        $trainerIds = array_values(array_unique(array_filter(array_map('intval', $formateurIds))));
+        if ($trainerIds === []) {
+            return [];
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($trainerIds), '?'));
+        $params = $trainerIds;
+        $params[] = $filiere;
+        $params[] = $annee;
+
+        $stmt = $this->db->prepare(
+            'SELECT
+                a.formateur_id,
+                COUNT(*) AS experience_count
+             FROM affectations a
+             INNER JOIN modules m ON m.id = a.module_id
+             WHERE a.formateur_id IN (' . $placeholders . ')
+               AND m.filiere = ?
+               AND a.annee = ?
+             GROUP BY a.formateur_id'
+        );
+        $stmt->execute($params);
+
+        $counts = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $counts[intval($row['formateur_id'] ?? 0)] = intval($row['experience_count'] ?? 0);
+        }
+
+        return $counts;
+    }
+
+    public function getCompetenceLevelsForModule(array $formateurIds, int $moduleId): array
+    {
+        $trainerIds = array_values(array_unique(array_filter(array_map('intval', $formateurIds))));
+        if ($trainerIds === []) {
+            return [];
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($trainerIds), '?'));
+        $params = $trainerIds;
+        $params[] = $moduleId;
+
+        $stmt = $this->db->prepare(
+            'SELECT
+                formateur_id,
+                competence_level
+             FROM formateur_modules
+             WHERE formateur_id IN (' . $placeholders . ')
+               AND module_id = ?'
+        );
+        $stmt->execute($params);
+
+        $levels = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $levels[intval($row['formateur_id'] ?? 0)] = intval($row['competence_level'] ?? 0);
+        }
+
+        return $levels;
+    }
+
+    public function countExperienceForTrainer(int $formateurId, string $filiere): int
     {
         $stmt = $this->db->prepare(
-            'SELECT COALESCE(m.code, CONCAT("M", LPAD(m.id, 3, "0"))) AS code
+            'SELECT COUNT(*)
              FROM affectations a
              INNER JOIN modules m ON m.id = a.module_id
              WHERE a.formateur_id = :formateur_id
-             ORDER BY m.code'
+               AND m.filiere = :filiere
+               AND a.annee = :annee'
         );
-        $stmt->execute(['formateur_id' => $formateurId]);
+        $stmt->execute([
+            'formateur_id' => $formateurId,
+            'filiere' => $filiere,
+            'annee' => currentAcademicYear(),
+        ]);
 
-        return array_map(static fn(array $row): string => $row['code'], $stmt->fetchAll());
+        return intval($stmt->fetchColumn());
     }
 
     public function getCompetenceLevel(int $formateurId, int $moduleId): ?int
@@ -93,23 +270,6 @@ class SmartAssignmentRepository
         $value = $stmt->fetchColumn();
 
         return $value !== false ? intval($value) : null;
-    }
-
-    public function countExperienceForTrainer(int $formateurId, string $filiere): int
-    {
-        $stmt = $this->db->prepare(
-            'SELECT COUNT(*)
-             FROM affectations a
-             INNER JOIN modules m ON m.id = a.module_id
-             WHERE a.formateur_id = :formateur_id
-               AND m.filiere = :filiere'
-        );
-        $stmt->execute([
-            'formateur_id' => $formateurId,
-            'filiere' => $filiere,
-        ]);
-
-        return intval($stmt->fetchColumn());
     }
 
     public function getCachedScore(int $formateurId, int $moduleId, int $ttlHours = 12): ?array
@@ -173,25 +333,32 @@ class SmartAssignmentRepository
         $stmt->execute(['formateur_id' => $formateurId]);
     }
 
-    public function updateTrainerCurrentHours(int $formateurId): void
+    public function updateTrainerCurrentHours(int $formateurId, ?int $annee = null): void
     {
-        $stmt = $this->db->prepare(
-            'UPDATE formateurs f
+        $sql = 'UPDATE formateurs f
              LEFT JOIN (
                 SELECT
                     a.formateur_id,
                     COALESCE(SUM(m.volume_horaire), 0) AS used_hours
                 FROM affectations a
                 INNER JOIN modules m ON m.id = a.module_id
-                WHERE a.formateur_id = :workload_formateur_id
+                WHERE a.formateur_id = :workload_formateur_id';
+        $params = [
+            'workload_formateur_id' => $formateurId,
+            'target_formateur_id' => $formateurId,
+        ];
+
+        if ($annee !== null) {
+            $sql .= ' AND a.annee = :annee';
+            $params['annee'] = $annee;
+        }
+
+        $sql .= '
                 GROUP BY a.formateur_id
              ) workload ON workload.formateur_id = f.id
              SET f.current_hours = COALESCE(workload.used_hours, 0)
-             WHERE f.id = :target_formateur_id'
-        );
-        $stmt->execute([
-            'workload_formateur_id' => $formateurId,
-            'target_formateur_id' => $formateurId,
-        ]);
+             WHERE f.id = :target_formateur_id';
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
     }
 }

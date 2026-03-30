@@ -11,13 +11,14 @@ export default function ExportFormateurButton({
   disabled = false,
   loading = false,
   label = 'Exporter ce formateur',
+  loadingLabel = 'Generation du PDF...',
   position = 'top',
   size = 'sm',
 }) {
   return (
     <IconButton
       icon={loading ? LoadingIcon : FileDown}
-      label={label}
+      label={loading ? loadingLabel : label}
       type="export"
       position={position}
       size={size}

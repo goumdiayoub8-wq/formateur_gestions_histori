@@ -13,16 +13,6 @@ const DashboardService = {
     );
   },
 
-  getCharts() {
-    return apiRequest(
-      {
-        url: `${DASHBOARD_BASE}?action=charts`,
-        method: 'get',
-      },
-      { dedupeKey: 'dashboard:charts', cacheKey: 'dashboard:charts', cacheTtlMs: 15000 },
-    );
-  },
-
   getDirectorOverview() {
     return apiRequest(
       {

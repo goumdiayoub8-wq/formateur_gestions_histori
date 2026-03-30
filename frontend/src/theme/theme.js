@@ -1,4 +1,5 @@
 export const THEME_STORAGE_KEY = 'theme';
+export const THEME_SWITCH_CLASS = 'theme-switching';
 
 export const THEMES = {
   LIGHT: 'light',
@@ -42,13 +43,25 @@ export function persistTheme(theme) {
   }
 }
 
-export function applyThemeToDocument(theme) {
+export function applyThemeToDocument(theme, options = {}) {
   if (typeof document === 'undefined' || !isTheme(theme)) {
     return;
   }
 
   const root = document.documentElement;
+  const { withEffect = false } = options;
+
+  if (withEffect) {
+    root.classList.add(THEME_SWITCH_CLASS);
+  }
+
   root.dataset.theme = theme;
   root.classList.toggle('dark', theme === THEMES.DARK);
   root.style.colorScheme = theme;
+
+  if (withEffect && typeof window !== 'undefined') {
+    window.setTimeout(() => {
+      root.classList.remove(THEME_SWITCH_CLASS);
+    }, 180);
+  }
 }

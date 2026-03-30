@@ -1,50 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, FileDown } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FileDown, LoaderCircle } from 'lucide-react';
 import PlanningService from '../../services/planningService';
 import FormateurService from '../../services/formateurService';
 import Spinner from '../../components/ui/Spinner';
 import useAcademicConfig from '../../hooks/useAcademicConfig';
 import useExportPDF from '../../hooks/useExportPDF';
-import { ACADEMIC_MAX_WEEKS, getAcademicWeekCount } from '../../utils/dateUtils';
+import { SYSTEM_WEEK_MAX, getAcademicWeekCount } from '../../utils/dateUtils';
 import { ChefToastViewport, useChefToasts } from '../../components/chef/ChefUI';
 import PlanningCreateButton from '../../components/planning/PlanningCreateButton';
 import PlanningCard from '../../components/planning/PlanningCard';
 import PlanningModal from '../../components/planning/PlanningModal';
-import ExportAllButton from '../../components/planning/ExportAllButton';
 import ExportFormateurButton from '../../components/planning/ExportFormateurButton';
 
 function formatHour(value) {
   const numericValue = Number(value || 0);
   return Number.isInteger(numericValue) ? `${numericValue}h` : `${numericValue.toFixed(1).replace(/\.0$/, '')}h`;
-}
-
-function exportPlanningCsv(rows, weekNumber) {
-  const headers = ['Formateur', 'Module', 'Groupe', 'Jour', 'Debut', 'Fin', 'Salle', 'Tache'];
-  const csvRows = [
-    headers.join(','),
-    ...rows.map((row) =>
-      [
-        row.formateur_nom,
-        row.module_nom,
-        row.groupe_code || '',
-        row.day_of_week,
-        row.start_time?.slice(0, 5),
-        row.end_time?.slice(0, 5),
-        row.salle_code || '',
-        row.task_title || '',
-      ]
-        .map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`)
-        .join(','),
-    ),
-  ];
-
-  const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `planning-detaille-semaine-${weekNumber}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
 }
 
 function SummaryCard({ label, value }) {
@@ -79,19 +49,25 @@ function EmptyCardState() {
   );
 }
 
+function getRealScheduleEntries(schedule = []) {
+  return Array.isArray(schedule) ? schedule.filter((entry) => entry?.is_session) : [];
+}
+
 function buildExportTrainer(formateur, rows, sessions) {
   const trainerId = Number(formateur?.id || 0);
   const summaryRow = rows.find((row) => Number(row.id) === trainerId) || null;
   const trainerSessions = sessions.filter((session) => Number(session.formateur_id) === trainerId);
+  const summaryEntries = getRealScheduleEntries(summaryRow?.schedule);
+  const summaryWeeklyHours = summaryEntries.reduce((sum, entry) => sum + Number(entry.duration_hours || 0), 0);
 
   return {
     id: trainerId || summaryRow?.id || null,
     name: formateur?.nom || summaryRow?.nom || 'Formateur',
     specialite: formateur?.specialite || summaryRow?.specialite || '',
-    weeklyHours:
-      summaryRow?.total_weekly_hours ||
-      trainerSessions.reduce((sum, session) => sum + Number(session.duration_hours || 0), 0),
-    entries: trainerSessions.length ? trainerSessions : summaryRow?.schedule || [],
+    weeklyHours: trainerSessions.length
+      ? trainerSessions.reduce((sum, session) => sum + Number(session.duration_hours || 0), 0)
+      : summaryWeeklyHours,
+    entries: trainerSessions.length ? trainerSessions : summaryEntries,
   };
 }
 
@@ -110,7 +86,14 @@ export default function PlanningChef() {
   const [exportTarget, setExportTarget] = useState('');
   const { config, loading: academicLoading, currentWeek, academicYearLabel } = useAcademicConfig();
   const { toasts, pushToast, dismissToast } = useChefToasts();
-  const { exporting, exportSinglePlanning, exportAllPlannings } = useExportPDF();
+  const {
+    exporting,
+    exportStage,
+    exportSinglePlanning,
+    exportAllPlannings,
+    exportAllPlanningsExcel,
+    exportStatusLabel,
+  } = useExportPDF();
 
   useEffect(() => {
     if (weekNumber !== null || academicLoading) {
@@ -151,25 +134,21 @@ export default function PlanningChef() {
 
   const maxWeekNumber = useMemo(() => {
     if (!config?.start_date || !config?.end_date) {
-      return ACADEMIC_MAX_WEEKS;
+      return SYSTEM_WEEK_MAX;
     }
 
-    return getAcademicWeekCount(config.start_date, config.end_date) || ACADEMIC_MAX_WEEKS;
+    return getAcademicWeekCount(config.start_date, config.end_date) || SYSTEM_WEEK_MAX;
   }, [config]);
 
   const rows = Array.isArray(payload?.rows) ? payload.rows : [];
   const summary = useMemo(() => {
-    if (sessions.length === 0) {
-      return payload?.summary || {};
-    }
-
     return {
       planned_courses: sessions.length,
       programmed_hours: sessions.reduce((sum, session) => sum + Number(session.duration_hours || 0), 0),
       active_groups: new Set(sessions.map((session) => session.groupe_id).filter(Boolean)).size,
       active_formateurs: new Set(sessions.map((session) => session.formateur_id).filter(Boolean)).size,
     };
-  }, [payload?.summary, sessions]);
+  }, [sessions]);
   const weekRange = payload?.week?.range?.label || 'Calendrier academique non configure';
 
   const openCreateModal = async () => {
@@ -262,6 +241,34 @@ export default function PlanningChef() {
     }
   };
 
+  const handleExportAllExcel = async () => {
+    try {
+      setExportTarget('all-excel');
+      const trainers = (formateurs.length ? formateurs : rows).map((formateur) =>
+        buildExportTrainer(formateur, rows, sessions),
+      );
+      await exportAllPlanningsExcel({
+        trainers,
+        weekNumber,
+        weekRange,
+        academicYearLabel,
+      });
+      pushToast({
+        tone: 'success',
+        title: 'Export Excel termine',
+        description: 'Le fichier Excel reprend exactement le meme rendu que le document PDF.',
+      });
+    } catch (exportError) {
+      pushToast({
+        tone: 'danger',
+        title: 'Export impossible',
+        description: exportError?.message || 'Le fichier Excel du planning n a pas pu etre genere.',
+      });
+    } finally {
+      setExportTarget('');
+    }
+  };
+
   const handleExportTrainerPdf = async (row) => {
     try {
       setExportTarget(`trainer-${row.id}`);
@@ -306,14 +313,43 @@ export default function PlanningChef() {
 
           <div className="flex items-center gap-3">
             <PlanningCreateButton onClick={openCreateModal} />
-            <ExportAllButton onClick={handleExportAllPdf} loading={exporting && exportTarget === 'all'} />
             <button
               type="button"
-              onClick={() => exportPlanningCsv(sessions, weekNumber)}
+              onClick={handleExportAllPdf}
+              disabled={exporting}
+              className="inline-flex h-[44px] items-center justify-center rounded-[16px] bg-[#dc2626] px-5 text-[14px] font-semibold text-white shadow-[0_6px_18px_rgba(220,38,38,0.24)] transition hover:bg-[#b91c1c] disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {exporting && exportTarget === 'all' ? (
+                <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <FileDown className="mr-2 h-4 w-4" />
+              )}
+              {exporting && exportTarget === 'all'
+                ? exportStage === 'rendering'
+                  ? 'Preparation PDF...'
+                  : exportStage === 'saving'
+                    ? 'Telechargement...'
+                    : 'Assemblage PDF...'
+                : 'Exporter PDF'}
+            </button>
+            <button
+              type="button"
+              onClick={handleExportAllExcel}
+              disabled={exporting}
               className="inline-flex h-[44px] items-center justify-center rounded-[16px] bg-[#2563eb] px-5 text-[14px] font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.25)] transition hover:bg-[#1f56cf]"
             >
-              <FileDown className="mr-2 h-4 w-4" />
-              Exporter Planning
+              {exporting && exportTarget === 'all-excel' ? (
+                <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <FileDown className="mr-2 h-4 w-4" />
+              )}
+              {exporting && exportTarget === 'all-excel'
+                ? exportStage === 'rendering'
+                  ? 'Conversion exacte...'
+                  : exportStage === 'saving'
+                    ? 'Telechargement...'
+                    : 'Preparation Excel...'
+                : 'Exporter Excel'}
             </button>
           </div>
         </div>
@@ -396,52 +432,63 @@ export default function PlanningChef() {
 
           <div className="mt-6 space-y-4">
             {rows.length ? (
-              rows.map((row) => (
-                <div key={row.id} className="rounded-[16px] border border-[#dde6f1] bg-white px-4 py-4">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                    <div>
-                      <p className="text-[15px] font-bold uppercase tracking-[0.01em] text-[#1b1f29]">{row.nom}</p>
-                      {row.specialite ? <p className="mt-1 text-[13px] text-[#6e7c92]">{row.specialite}</p> : null}
-                    </div>
+              rows.map((row) => {
+                const realScheduleEntries = getRealScheduleEntries(row.schedule);
+                const realScheduleCount = realScheduleEntries.length;
+                const realWeeklyHours = realScheduleEntries.reduce(
+                  (sum, entry) => sum + Number(entry.duration_hours || 0),
+                  0,
+                );
 
-                    <span className="inline-flex rounded-full bg-[#070a24] px-3 py-1.5 text-[13px] font-semibold text-white">
-                      {formatHour(row.total_weekly_hours)} / {formatHour(row.display_capacity_hours)}
-                    </span>
-                  </div>
-
-                  <div className="mt-4 flex items-center justify-between gap-3">
-                    <div className="text-[13px] text-[#6e7c92]">
-                      {row.schedule_count || 0} creneaux detectes cette semaine
-                    </div>
-                    <ExportFormateurButton
-                      label="Exporter ce formateur"
-                      position="top"
-                      size="sm"
-                      onClick={() => handleExportTrainerPdf(row)}
-                      loading={exporting && exportTarget === `trainer-${row.id}`}
-                    />
-                  </div>
-
-                  <div className="mt-4 grid gap-3 lg:grid-cols-5">
-                    {row.daily_hours.map((day) => (
-                      <div key={`${row.id}-${day.label}`} className="text-center">
-                        <p className="mb-2 text-[14px] text-[#596b84]">{day.label}</p>
-                        <div className="rounded-[6px] border border-[#b8d3ff] bg-[#edf5ff] py-2 text-[15px] font-semibold text-[#212939]">
-                          {day.display_hours}
-                        </div>
+                return (
+                  <div key={row.id} className="rounded-[16px] border border-[#dde6f1] bg-white px-4 py-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <p className="text-[15px] font-bold uppercase tracking-[0.01em] text-[#1b1f29]">{row.nom}</p>
+                        {row.specialite ? <p className="mt-1 text-[13px] text-[#6e7c92]">{row.specialite}</p> : null}
                       </div>
-                    ))}
-                  </div>
 
-                  {row.alerts?.length ? (
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {row.alerts.map((alert, index) => (
-                        <AlertPill key={`${row.id}-alert-${index}`} alert={alert} />
+                      <span className="inline-flex rounded-full bg-[#070a24] px-3 py-1.5 text-[13px] font-semibold text-white">
+                        {formatHour(realWeeklyHours)} / {formatHour(row.display_capacity_hours)}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 flex items-center justify-between gap-3">
+                      <div className="text-[13px] text-[#6e7c92]">
+                        {realScheduleCount} creneaux detectes cette semaine
+                      </div>
+                      <ExportFormateurButton
+                        label="Exporter ce formateur"
+                        loadingLabel={exportStatusLabel}
+                        position="top"
+                        size="sm"
+                        onClick={() => handleExportTrainerPdf(row)}
+                        disabled={realScheduleCount === 0}
+                        loading={exporting && exportTarget === `trainer-${row.id}`}
+                      />
+                    </div>
+
+                    <div className="mt-4 grid gap-3 lg:grid-cols-5">
+                      {row.daily_hours.map((day) => (
+                        <div key={`${row.id}-${day.label}`} className="text-center">
+                          <p className="mb-2 text-[14px] text-[#596b84]">{day.label}</p>
+                          <div className="rounded-[6px] border border-[#b8d3ff] bg-[#edf5ff] py-2 text-[15px] font-semibold text-[#212939]">
+                            {day.display_hours}
+                          </div>
+                        </div>
                       ))}
                     </div>
-                  ) : null}
-                </div>
-              ))
+
+                    {row.alerts?.length ? (
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {row.alerts.map((alert, index) => (
+                          <AlertPill key={`${row.id}-alert-${index}`} alert={alert} />
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })
             ) : (
               <div className="rounded-[16px] border border-dashed border-[#d3dfef] bg-[#f8fbff] px-6 py-10 text-center text-[15px] text-[#61748f]">
                 Aucun planning n est encore disponible pour cette semaine.

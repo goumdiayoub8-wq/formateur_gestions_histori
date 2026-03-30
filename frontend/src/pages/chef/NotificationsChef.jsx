@@ -279,7 +279,7 @@ export default function NotificationsChef() {
                       <button
                         type="button"
                         disabled={actionLoadingId === item.id}
-                        onClick={() => handleReview(item, 'confirmed')}
+                        onClick={() => handleReview(item, 'rejected')}
                         className="inline-flex items-center gap-2 rounded-[14px] border border-[#f4ddb6] bg-[#fff8ea] px-4 py-2.5 text-sm font-semibold text-[#b7791f] transition hover:bg-[#fff2d6] disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         <XCircle className="h-4 w-4" />

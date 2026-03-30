@@ -182,14 +182,17 @@ export default function PlanningPdfDocument({
   const exportDate = generatedAtLabel.split(',')[0];
 
   return (
-    <div style={{ width: 1122, backgroundColor: '#ffffff', padding: 20, color: '#000000', fontFamily: 'Arial, sans-serif' }}>
+    <div
+      className="planning-pdf-export"
+      style={{ width: 1122, backgroundColor: '#ffffff', padding: 20, color: '#000000', fontFamily: 'Arial, sans-serif', colorScheme: 'light' }}
+    >
       <div className="border-[3px] border-black bg-white">
         <div className="grid grid-cols-[230px_1fr_230px] border-b-[3px] border-black">
           <div className="flex h-[86px] items-center justify-center border-r-[3px] border-black">
             <img src={casablancaSettatLogo} alt="Casablanca Settat" className="h-[62px] w-[62px] object-contain" />
           </div>
           <div className="flex h-[86px] flex-col items-center justify-center px-4 text-center">
-            <p className="text-[16px] font-bold">مكتب التكوين المهني و إنعاش الشغل</p>
+            <p className="text-[16px] font-bold leading-[1.45]" lang="ar" dir="rtl">مكتب التكوين المهني و إنعاش الشغل</p>
             <p className="mt-1 text-[13px] font-semibold">Office de la formation professionnelle et</p>
             <p className="text-[13px] font-semibold">de la promotion du travail</p>
           </div>
@@ -208,7 +211,7 @@ export default function PlanningPdfDocument({
         <div className="px-4 pb-3">
           <div className="grid grid-cols-[220px_1fr_260px] items-center gap-4">
             <div className="space-y-1 text-[12px] font-bold uppercase">
-              <p>DRRSK / CMC RABAT</p>
+              <p>DRRSK / CMC CASABLANCA</p>
               <p>POLE : {truncate(trainer?.specialite || 'FORMATION DIGITALE', 22)}</p>
               <p>GROUPE</p>
             </div>
@@ -279,7 +282,7 @@ export default function PlanningPdfDocument({
           <div className="flex items-end gap-6">
             <div className="text-[12px] font-bold">
               <p className="underline">La Direction:</p>
-              <p className="mt-2">Fait a Temesna</p>
+              <p className="mt-2">Fait a Casablanca</p>
               <p>Le : {exportDate}</p>
             </div>
             <StampSeal />

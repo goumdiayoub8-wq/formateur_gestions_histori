@@ -20,13 +20,9 @@ import {
 import DashboardService from '../../services/dashboardService';
 import FormateurService from '../../services/formateurService';
 import ModuleService from '../../services/moduleService';
-import PlanningService from '../../services/planningService';
 import AcademicConfigService from '../../services/academicConfigService';
-import AffectationService from '../../services/affectationService';
 import {
-  buildDashboardKpis,
   buildFiliereSummaries,
-  buildTrainerStatsMap,
   formatHours,
   getAcademicWeekNumber,
   getAlertTone,
@@ -77,7 +73,10 @@ function DistributionTooltip({ active, payload }) {
     <div className="rounded-[18px] border border-[#dfe7f2] bg-white px-4 py-3 shadow-[0_16px_34px_rgba(28,52,84,0.16)]">
       <p className="text-sm font-semibold text-[#203047]">{row.fullName}</p>
       <p className="mt-1 text-sm text-[#6f8199]">
-        Heures attribuees: <span className="font-semibold text-[#203047]">{formatHours(row.assignedHours)}</span>
+        Heures validees: <span className="font-semibold text-[#203047]">{formatHours(row.plannedHours)}</span>
+      </p>
+      <p className="mt-1 text-sm text-[#6f8199]">
+        Heures realisees: <span className="font-semibold text-[#203047]">{formatHours(row.completedHours)}</span>
       </p>
       <p className="mt-1 text-sm text-[#6f8199]">
         Limite annuelle: <span className="font-semibold text-[#203047]">{formatHours(row.limit)}</span>
@@ -91,12 +90,12 @@ function DistributionChart({ rows }) {
     return (
       <ChefEmptyState
         title="Aucune charge a visualiser"
-        description="Les barres de repartition apparaitront ici des que des affectations seront disponibles."
+        description="Les barres de repartition apparaitront ici des que du planning valide sera disponible."
       />
     );
   }
 
-  const maxValue = rows.reduce((maximum, row) => Math.max(maximum, row.assignedHours), 1);
+  const maxValue = rows.reduce((maximum, row) => Math.max(maximum, row.plannedHours), 1);
   const domainMax = Math.max(1000, Math.ceil(maxValue / 250) * 250);
   const yTicks = Array.from(
     { length: Math.floor(domainMax / 250) + 1 },
@@ -133,7 +132,7 @@ function DistributionChart({ rows }) {
               content={<DistributionTooltip />}
             />
             <Bar
-              dataKey="assignedHours"
+              dataKey="plannedHours"
               radius={[8, 8, 0, 0]}
               maxBarSize={56}
             >
@@ -154,8 +153,6 @@ export default function DashboardChef() {
   const [dashboardPayload, setDashboardPayload] = useState(null);
   const [formateurs, setFormateurs] = useState([]);
   const [modules, setModules] = useState([]);
-  const [affectations, setAffectations] = useState([]);
-  const [planningEntries, setPlanningEntries] = useState([]);
   const [academicConfig, setAcademicConfig] = useState(null);
   const { toasts, pushToast, dismissToast } = useChefToasts();
 
@@ -171,15 +168,11 @@ export default function DashboardChef() {
           dashboardResponse,
           formateursResponse,
           modulesResponse,
-          affectationsResponse,
-          planningResponse,
           academicConfigResponse,
         ] = await Promise.all([
           DashboardService.getStats(),
           FormateurService.list(),
           ModuleService.list(),
-          AffectationService.list(),
-          PlanningService.getWeeklyPlanning(),
           AcademicConfigService.getConfig(),
         ]);
 
@@ -190,8 +183,6 @@ export default function DashboardChef() {
         setDashboardPayload(dashboardResponse || {});
         setFormateurs(Array.isArray(formateursResponse) ? formateursResponse : []);
         setModules(Array.isArray(modulesResponse) ? modulesResponse : []);
-        setAffectations(Array.isArray(affectationsResponse) ? affectationsResponse : []);
-        setPlanningEntries(Array.isArray(planningResponse) ? planningResponse : []);
         setAcademicConfig(academicConfigResponse || null);
       } catch (loadError) {
         if (!mounted) {
@@ -224,40 +215,42 @@ export default function DashboardChef() {
     [academicConfig],
   );
 
-  const trainerStatsMap = useMemo(
-    () =>
-      buildTrainerStatsMap({
-        formateurs,
-        affectations,
-        planningEntries,
-        dashboardStats: dashboardPayload?.formateurs || [],
-        academicYear: academicConfig?.academic_year_label
-          ? safeNumber(String(academicConfig.academic_year_label).slice(0, 4))
-          : null,
-        currentWeek,
-      }),
-    [academicConfig, affectations, dashboardPayload, formateurs, planningEntries, currentWeek],
+  const dashboardTrainerRows = useMemo(
+    () => (Array.isArray(dashboardPayload?.formateurs) ? dashboardPayload.formateurs : []),
+    [dashboardPayload],
   );
 
   const dashboardKpis = useMemo(
-    () =>
-      buildDashboardKpis({
-        formateurs,
-        modules,
-        planningEntries,
-        dashboardPayload,
-      }),
-    [dashboardPayload, formateurs, modules, planningEntries],
+    () => ({
+      totalFormateurs: safeNumber(dashboardPayload?.overview?.total_formateurs, formateurs.length),
+      totalModules: safeNumber(dashboardPayload?.overview?.total_modules, modules.length),
+      averageCompletedLoad:
+        dashboardTrainerRows.length > 0
+          ? Math.round(
+              dashboardTrainerRows.reduce((sum, row) => sum + safeNumber(row.completed_hours), 0)
+                / dashboardTrainerRows.length,
+            )
+          : 0,
+      averagePlannedLoad:
+        dashboardTrainerRows.length > 0
+          ? Math.round(
+              dashboardTrainerRows.reduce((sum, row) => sum + safeNumber(row.planned_hours), 0)
+                / dashboardTrainerRows.length,
+            )
+          : 0,
+      alertCount: Array.isArray(dashboardPayload?.alerts) ? dashboardPayload.alerts.length : 0,
+    }),
+    [dashboardPayload, dashboardTrainerRows, formateurs.length, modules.length],
   );
 
   const distributionRows = useMemo(() => {
-    return formateurs
+    return dashboardTrainerRows
       .map((formateur) => {
-        const stats = trainerStatsMap[safeNumber(formateur.id)] || {};
-        const assignedHours = safeNumber(stats.annual_hours);
+        const plannedHours = safeNumber(formateur.planned_hours);
+        const completedHours = safeNumber(formateur.completed_hours);
         const loadRatio =
           safeNumber(formateur.max_heures) > 0
-            ? assignedHours / safeNumber(formateur.max_heures)
+            ? plannedHours / safeNumber(formateur.max_heures)
             : 0;
 
         return {
@@ -267,32 +260,39 @@ export default function DashboardChef() {
             .split(' ')
             .slice(-1)[0]
             ?.toUpperCase(),
-          assignedHours,
+          plannedHours,
+          completedHours,
           limit: safeNumber(formateur.max_heures),
           loadRatio,
           barColor: buildDistributionColor(loadRatio),
         };
       })
-      .sort((left, right) => right.assignedHours - left.assignedHours)
+      .sort((left, right) => right.plannedHours - left.plannedHours)
       .slice(0, 8);
-  }, [formateurs, trainerStatsMap]);
+  }, [dashboardTrainerRows]);
 
   const weeklyRows = useMemo(() => {
-    return formateurs
+    return dashboardTrainerRows
       .map((formateur) => {
-        const stats = trainerStatsMap[safeNumber(formateur.id)] || {};
         return {
-          id: safeNumber(formateur.id),
+          id: safeNumber(formateur.id || formateur.formateur_id),
           nom: formateur.nom,
-          annualHours: safeNumber(stats.annual_hours),
+          completedHours: safeNumber(formateur.completed_hours),
+          plannedHours: safeNumber(formateur.planned_hours),
           annualLimit: safeNumber(formateur.max_heures),
-          currentWeekHours: safeNumber(stats.current_week_hours),
-          maxWeekHours: safeNumber(stats.max_week_hours),
+          currentWeekHours: safeNumber(formateur.current_week_hours),
+          maxWeekHours: safeNumber(formateur.max_week_hours),
         };
       })
-      .sort((left, right) => right.annualHours - left.annualHours)
+      .sort((left, right) => {
+        if (right.currentWeekHours !== left.currentWeekHours) {
+          return right.currentWeekHours - left.currentWeekHours;
+        }
+
+        return right.completedHours - left.completedHours;
+      })
       .slice(0, 5);
-  }, [formateurs, trainerStatsMap]);
+  }, [dashboardTrainerRows]);
 
   const filiereSummaries = useMemo(
     () => buildFiliereSummaries(modules).slice(0, 4),
@@ -300,14 +300,13 @@ export default function DashboardChef() {
   );
 
   const currentWeekTotal = useMemo(() => {
-    if (currentWeek === null) {
-      return 0;
+    const overviewValue = safeNumber(dashboardPayload?.overview?.current_week_validated_hours, NaN);
+    if (Number.isFinite(overviewValue)) {
+      return overviewValue;
     }
 
-    return planningEntries
-      .filter((entry) => safeNumber(entry.semaine) === currentWeek)
-      .reduce((sum, entry) => sum + safeNumber(entry.heures), 0);
-  }, [planningEntries, currentWeek]);
+    return dashboardTrainerRows.reduce((sum, row) => sum + safeNumber(row.current_week_hours), 0);
+  }, [dashboardPayload, dashboardTrainerRows]);
 
   if (loading) {
     return <ChefLoadingState label="Chargement du dashboard Chef..." />;
@@ -365,8 +364,8 @@ export default function DashboardChef() {
         />
         <ChefStatCard
           label="Charge moyenne"
-          value={formatHours(dashboardKpis.averageLoad)}
-          helper="Moyenne annuelle par formateur"
+          value={formatHours(dashboardKpis.averageCompletedLoad)}
+          helper={`Realise · Valide moyen ${formatHours(dashboardKpis.averagePlannedLoad)}`}
           icon={Sparkles}
           tone="green"
         />
@@ -380,7 +379,7 @@ export default function DashboardChef() {
         <ChefStatCard
           label="Heures / semaine"
           value={formatHours(currentWeekTotal)}
-          helper={currentWeek ? `Projection semaine ${currentWeek}` : 'Planning global'}
+          helper={currentWeek ? `Validees semaine ${currentWeek}` : 'Planning valide'}
           icon={CalendarDays}
           tone="violet"
         />
@@ -389,20 +388,20 @@ export default function DashboardChef() {
       <div className="grid gap-6 xl:grid-cols-[1.1fr_1fr]">
         <ChefSection
           title="Repartition des heures par formateur"
-          subtitle="Histogramme dynamique des heures cumulees attribuees a chaque formateur, avec couleurs automatiques selon la charge reelle du projet."
+          subtitle="Histogramme des heures planifiees validees par formateur, sans melanger affectations et seances realisees."
         >
           <DistributionChart rows={distributionRows} />
         </ChefSection>
 
         <ChefSection
           title="Charge de travail hebdomadaire"
-          subtitle="Vue consolidee des charges actuelles et maximales observees dans le planning."
+          subtitle="Charges hebdomadaires calculees uniquement sur le planning valide, avec progression annuelle basee sur les seances realisees."
         >
           {weeklyRows.length ? (
             <div className="space-y-5">
               {weeklyRows.map((row) => {
                 const annualTone = getLoadTone(
-                  row.annualLimit > 0 ? row.annualHours / row.annualLimit : 0,
+                  row.annualLimit > 0 ? row.completedHours / row.annualLimit : 0,
                 );
 
                 return (
@@ -411,15 +410,15 @@ export default function DashboardChef() {
                       <div>
                         <p className="text-lg font-semibold text-[#1b2941]">{row.nom}</p>
                         <p className="text-sm text-[#7b8ea8]">
-                          Actuel {formatHours(row.currentWeekHours)} · Max {formatHours(row.maxWeekHours)}
+                          Valide {formatHours(row.currentWeekHours)} · Max {formatHours(row.maxWeekHours)} · Realise {formatHours(row.completedHours)}
                         </p>
                       </div>
                       <ChefBadge tone={annualTone === 'danger' ? 'red' : annualTone === 'warning' ? 'orange' : 'green'}>
-                        {formatHours(row.annualHours)} / {formatHours(row.annualLimit)}
+                        Realise {formatHours(row.completedHours)} / {formatHours(row.annualLimit)}
                       </ChefBadge>
                     </div>
                     <ChefProgress
-                      value={row.annualHours}
+                      value={row.completedHours}
                       max={row.annualLimit}
                       tone={
                         annualTone === 'danger'
@@ -431,7 +430,7 @@ export default function DashboardChef() {
                               : 'blue'
                       }
                       rightLabel={`${Math.round(
-                        row.annualLimit > 0 ? (row.annualHours / row.annualLimit) * 100 : 0,
+                        row.annualLimit > 0 ? (row.completedHours / row.annualLimit) * 100 : 0,
                       )}%`}
                     />
                   </div>
@@ -441,7 +440,7 @@ export default function DashboardChef() {
           ) : (
             <ChefEmptyState
               title="Aucun indicateur hebdomadaire"
-              description="Les progressions hebdomadaires apparaissent ici des que du planning est saisi."
+              description="Les progressions hebdomadaires apparaissent ici des que du planning valide est disponible."
             />
           )}
         </ChefSection>

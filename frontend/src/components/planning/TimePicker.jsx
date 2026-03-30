@@ -26,6 +26,8 @@ export default function TimePicker({
           type="time"
           value={value}
           onChange={(event) => onChange(event.target.value)}
+          min="08:00"
+          max="18:00"
           disabled={disabled}
           className="w-full rounded-[18px] bg-transparent px-4 py-3.5 text-[15px] text-[#1d2538] outline-none disabled:cursor-not-allowed disabled:opacity-60"
         />

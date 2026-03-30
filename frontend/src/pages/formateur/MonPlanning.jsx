@@ -4,7 +4,7 @@ import PlanningService from '../../services/planningService';
 import Spinner from '../../components/ui/Spinner';
 import useAcademicConfig from '../../hooks/useAcademicConfig';
 import useExportPDF from '../../hooks/useExportPDF';
-import { ACADEMIC_MAX_WEEKS, getAcademicWeekCount, getAcademicWeekRange } from '../../utils/dateUtils';
+import { SYSTEM_WEEK_MAX, getAcademicWeekCount, getAcademicWeekRange } from '../../utils/dateUtils';
 import IconButton from '../../components/ui/IconButton';
 import ExportFormateurButton from '../../components/planning/ExportFormateurButton';
 import {
@@ -15,68 +15,20 @@ import {
   FormateurStatCard,
 } from '../../components/formateur/FormateurUI';
 
-const SLOT_TEMPLATES = [
-  { time_range: '08:30h-13:00h', duration: 5, room_code: 'SN-12' },
-  { time_range: '14:00h-16:30h', duration: 2.5, room_code: 'SN-12' },
-  { time_range: '10:45h-13:00h', duration: 2.5, room_code: 'SN-12' },
-  { time_range: '14:00h-19:00h', duration: 5, room_code: 'SN-12' },
-];
-
-const DAY_LABELS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi'];
-
 function formatHourValue(value) {
   const numericValue = Number(value || 0);
   return Number.isInteger(numericValue) ? `${numericValue}H` : `${numericValue.toFixed(1).replace(/\.0$/, '')}H`;
 }
 
-function buildEntries(modules, weekNumber) {
-  let dayCursor = 0;
-  let slotCursor = 0;
-  const entries = [];
-
-  modules.forEach((module, moduleIndex) => {
-    const baseWeeklyHours = Number(module.weekly_hours || 0);
-    const derivedWeeklyHours = baseWeeklyHours > 0
-      ? baseWeeklyHours
-      : Math.max(2.5, Math.min(10, Math.round((Number(module.volume_horaire || 0) / 12) * 2) / 2));
-    let remaining = derivedWeeklyHours;
-
-    while (remaining > 0) {
-      const template = SLOT_TEMPLATES[slotCursor % SLOT_TEMPLATES.length];
-      const sessionDuration = remaining >= 5 ? 5 : remaining >= 2.5 ? 2.5 : remaining;
-
-      entries.push({
-        id: `${module.id}-${weekNumber}-${dayCursor}-${slotCursor}`,
-        module_id: module.id,
-        day_label: DAY_LABELS[dayCursor % DAY_LABELS.length],
-        module_name: module.intitule,
-        group_code: module.group_codes?.[entries.length % Math.max(1, module.group_codes?.length || 1)] || 'DES101',
-        time_range: template.time_range,
-        duration_label: `${sessionDuration}h`,
-        room_code: template.room_code,
-        status_label: 'Planifie',
-        accent: moduleIndex % 2 === 0 ? '#2c5a91' : '#8b3dff',
-      });
-
-      remaining = Math.max(0, remaining - sessionDuration);
-      dayCursor += 1;
-      slotCursor += 1;
-    }
-  });
-
-  return entries;
-}
-
 export default function MonPlanning() {
   const [weekNumber, setWeekNumber] = useState(null);
   const [stats, setStats] = useState(null);
-  const [modules, setModules] = useState([]);
   const [visibility, setVisibility] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const { exporting, exportSinglePlanning } = useExportPDF();
+  const { exporting, exportSinglePlanning, exportStatusLabel } = useExportPDF();
   const {
     config,
     loading: academicLoading,
@@ -103,16 +55,15 @@ export default function MonPlanning() {
 
     let mounted = true;
 
-    const loadPlanning = async () => {
+    const loadPlanning = async (targetWeek) => {
       try {
         setLoading(true);
         setError('');
         setSuccess('');
 
-        const [statsResponse, modulesResponse, visibilityResponse] = await Promise.all([
-          PlanningService.getWeeklyStats(weekNumber),
-          PlanningService.getMesModules(weekNumber),
-          PlanningService.getTrainerVisibility(weekNumber),
+        const [statsResponse, visibilityResponse] = await Promise.all([
+          PlanningService.getWeeklyStats(targetWeek),
+          PlanningService.getTrainerVisibility(targetWeek),
         ]);
 
         if (!mounted) {
@@ -120,7 +71,6 @@ export default function MonPlanning() {
         }
 
         setStats(statsResponse);
-        setModules(Array.isArray(modulesResponse) ? modulesResponse : []);
         setVisibility(visibilityResponse || null);
       } catch (loadError) {
         if (mounted) {
@@ -133,22 +83,50 @@ export default function MonPlanning() {
       }
     };
 
-    loadPlanning();
+    loadPlanning(weekNumber);
 
     return () => {
       mounted = false;
     };
   }, [weekNumber]);
 
-  const entries = useMemo(() => visibility?.schedule || buildEntries(modules, weekNumber), [modules, visibility, weekNumber]);
+  const loadPlanning = async (targetWeek = weekNumber) => {
+    if (targetWeek === null) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError('');
+      setSuccess('');
+
+      const [statsResponse, visibilityResponse] = await Promise.all([
+        PlanningService.getWeeklyStats(targetWeek),
+        PlanningService.getTrainerVisibility(targetWeek),
+      ]);
+
+      setStats(statsResponse);
+      setVisibility(visibilityResponse || null);
+    } catch (loadError) {
+      setError(loadError?.message || 'Impossible de charger le planning de la semaine.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const entries = useMemo(
+    () => (Array.isArray(visibility?.schedule) ? visibility.schedule.filter((entry) => entry?.is_session) : []),
+    [visibility],
+  );
   const alerts = Array.isArray(visibility?.alerts) ? visibility.alerts : [];
+  const hasRealEntries = entries.length > 0;
   const hasValidAcademicConfig = Boolean(config && validation.isValid);
   const maxWeekNumber = useMemo(() => {
     if (!hasValidAcademicConfig) {
-      return ACADEMIC_MAX_WEEKS;
+      return SYSTEM_WEEK_MAX;
     }
 
-    return getAcademicWeekCount(config.start_date, config.end_date) || ACADEMIC_MAX_WEEKS;
+    return getAcademicWeekCount(config.start_date, config.end_date) || SYSTEM_WEEK_MAX;
   }, [config, hasValidAcademicConfig]);
   const weekLabel = `Semaine ${weekNumber ?? '-'}`;
   const weekRange = useMemo(() => {
@@ -197,6 +175,27 @@ export default function MonPlanning() {
       setActionLoadingId('');
     }
   };
+
+  const handleCompleteSession = async (entry) => {
+    try {
+      setActionLoadingId(entry.id);
+      setError('');
+      setSuccess('');
+
+      await PlanningService.completePlanningSession(entry.id);
+      await loadPlanning(weekNumber);
+      setSuccess('La seance a ete marquee comme realisee et la progression a ete mise a jour.');
+    } catch (completionError) {
+      setError(completionError?.message || 'Impossible de marquer cette seance comme realisee.');
+    } finally {
+      setActionLoadingId('');
+    }
+  };
+
+  const canMarkCompleted = (entry) =>
+    Boolean(entry?.is_session) && String(entry?.status || '').toLowerCase() === 'scheduled';
+
+  const isCompletedSession = (entry) => ['completed', 'done'].includes(String(entry?.status || '').toLowerCase());
 
   const handleExportPlanning = async () => {
     try {
@@ -255,9 +254,11 @@ export default function MonPlanning() {
 
           <ExportFormateurButton
             label="Exporter mon planning"
+            loadingLabel={exportStatusLabel}
             position="bottom"
             size="md"
             onClick={handleExportPlanning}
+            disabled={!hasRealEntries}
             loading={exporting}
           />
         </div>
@@ -360,7 +361,7 @@ export default function MonPlanning() {
       <FormateurPanel className="p-6">
         <FormateurSectionHeader title="Mon Planning Hebdomadaire" />
 
-        {visibility?.daily_totals?.length ? (
+        {hasRealEntries && visibility?.daily_totals?.length ? (
           <div className="mt-6 grid gap-3 xl:grid-cols-5 md:grid-cols-3">
             {visibility.daily_totals.map((day) => (
               <div key={day.label} className="rounded-[18px] border border-[#dce5f3] bg-[#f7f9fd] px-4 py-4 text-center">
@@ -411,6 +412,21 @@ export default function MonPlanning() {
                     </td>
                     <td className="border-b border-[#edf2f8] px-4 py-5">
                       <div className="flex items-center gap-2">
+                        {canMarkCompleted(entry) ? (
+                          <button
+                            type="button"
+                            disabled={actionLoadingId === entry.id}
+                            onClick={() => handleCompleteSession(entry)}
+                            className="inline-flex items-center rounded-full border border-[#bfe8cb] bg-[#effcf3] px-3 py-2 text-[12px] font-semibold text-[#1b7b48] transition hover:bg-[#dff7e7] disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Marquer realise
+                          </button>
+                        ) : null}
+                        {isCompletedSession(entry) ? (
+                          <span className="inline-flex items-center rounded-full border border-[#bfe8cb] bg-[#effcf3] px-3 py-2 text-[12px] font-semibold text-[#1b7b48]">
+                            Realise
+                          </span>
+                        ) : null}
                         <IconButton
                           icon={Check}
                           label="Accepter ce creneau"

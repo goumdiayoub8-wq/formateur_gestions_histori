@@ -2,7 +2,10 @@
 
 require_once __DIR__ . '/HttpException.php';
 
-const ACADEMIC_MAX_WEEKS = 35;
+const SYSTEM_WEEK_MIN = 1;
+const SYSTEM_WEEK_MAX = 44;
+const ACADEMIC_WEEKS = 35;
+const VALIDATION_START_WEEK = 26;
 
 function ensureSessionStarted(): void
 {
@@ -172,17 +175,17 @@ function currentAcademicWeek(): int
 {
     $requestedWeek = requestQuery('week') ?? requestQuery('semaine');
     if ($requestedWeek !== null && $requestedWeek !== '') {
-        return max(1, min(ACADEMIC_MAX_WEEKS, intval($requestedWeek)));
+        return max(SYSTEM_WEEK_MIN, min(SYSTEM_WEEK_MAX, intval($requestedWeek)));
     }
 
     $config = currentAcademicConfig();
     if (!$config || empty($config['start_date'])) {
-        return max(1, min(ACADEMIC_MAX_WEEKS, intval(date('W'))));
+        return max(SYSTEM_WEEK_MIN, min(SYSTEM_WEEK_MAX, intval(date('W'))));
     }
 
     $start = DateTimeImmutable::createFromFormat('Y-m-d', (string) $config['start_date']);
     if (!$start) {
-        return max(1, min(ACADEMIC_MAX_WEEKS, intval(date('W'))));
+        return max(SYSTEM_WEEK_MIN, min(SYSTEM_WEEK_MAX, intval(date('W'))));
     }
 
     $current = new DateTimeImmutable('today');
@@ -196,10 +199,127 @@ function currentAcademicWeek(): int
 
     $diffDays = intval($start->diff($current)->format('%r%a'));
     if ($diffDays < 0) {
-        return 1;
+        return SYSTEM_WEEK_MIN;
     }
 
-    return max(1, min(ACADEMIC_MAX_WEEKS, intdiv($diffDays, 7) + 1));
+    return max(SYSTEM_WEEK_MIN, min(SYSTEM_WEEK_MAX, intdiv($diffDays, 7) + 1));
+}
+
+function formatWeekRangeLabel(array $weeks): string
+{
+    $normalized = array_values(array_unique(array_filter(array_map(
+        static fn ($week): int => intval($week),
+        $weeks
+    ), static fn (int $week): bool => $week > 0)));
+
+    if ($normalized === []) {
+        return '';
+    }
+
+    sort($normalized, SORT_NUMERIC);
+
+    $ranges = [];
+    $start = $normalized[0];
+    $previous = $normalized[0];
+
+    foreach (array_slice($normalized, 1) as $week) {
+        if ($week === $previous + 1) {
+            $previous = $week;
+            continue;
+        }
+
+        $ranges[] = $start === $previous ? (string) $start : sprintf('%d-%d', $start, $previous);
+        $start = $week;
+        $previous = $week;
+    }
+
+    $ranges[] = $start === $previous ? (string) $start : sprintf('%d-%d', $start, $previous);
+
+    return implode(', ', $ranges);
+}
+
+function normalizeSqlAlias(string $alias, string $fallback = 's'): string
+{
+    return preg_replace('/[^a-zA-Z0-9_]/', '', $alias) ?: $fallback;
+}
+
+function planningSessionHoursExpression(string $alias = 's'): string
+{
+    $normalizedAlias = normalizeSqlAlias($alias, 's');
+
+    return sprintf('SUM(TIMESTAMPDIFF(MINUTE, %1$s.start_time, %1$s.end_time)) / 60', $normalizedAlias);
+}
+
+function completedPlanningSessionCondition(string $alias = 's'): string
+{
+    $normalizedAlias = normalizeSqlAlias($alias, 's');
+
+    return sprintf(
+        '(%1$s.status IN ("done", "completed") AND %1$s.status <> "cancelled" AND %1$s.session_date IS NOT NULL AND %1$s.session_date <= CURDATE())',
+        $normalizedAlias,
+    );
+}
+
+function completedPlanningSessionHoursExpression(string $alias = 's'): string
+{
+    $normalizedAlias = normalizeSqlAlias($alias, 's');
+
+    return planningSessionHoursExpression($normalizedAlias);
+}
+
+function validatedPlanningSubmissionCondition(string $alias = 'ps'): string
+{
+    $normalizedAlias = normalizeSqlAlias($alias, 'ps');
+
+    return sprintf(
+        '(%1$s.status IN ("approved", "validated", "planned"))',
+        $normalizedAlias
+    );
+}
+
+function validatedPlanningSessionExistsCondition(
+    string $sessionAlias = 's',
+    string $submissionAlias = 'ps',
+    ?int $academicYear = null
+): string {
+    $normalizedSessionAlias = normalizeSqlAlias($sessionAlias, 's');
+    $normalizedSubmissionAlias = normalizeSqlAlias($submissionAlias, 'ps');
+    $latestSubmissionAlias = $normalizedSubmissionAlias . '_latest';
+    $conditions = [
+        sprintf('%s.formateur_id = %s.formateur_id', $normalizedSubmissionAlias, $normalizedSessionAlias),
+        sprintf('%s.semaine = %s.week_number', $normalizedSubmissionAlias, $normalizedSessionAlias),
+    ];
+    $latestConditions = [
+        sprintf('%s.formateur_id = %s.formateur_id', $latestSubmissionAlias, $normalizedSessionAlias),
+        sprintf('%s.semaine = %s.week_number', $latestSubmissionAlias, $normalizedSessionAlias),
+    ];
+
+    if ($academicYear !== null) {
+        $conditions[] = sprintf('%s.academic_year = %d', $normalizedSubmissionAlias, max(0, $academicYear));
+        $latestConditions[] = sprintf('%s.academic_year = %d', $latestSubmissionAlias, max(0, $academicYear));
+    }
+
+    return sprintf(
+        'EXISTS (
+            SELECT 1
+            FROM planning_submissions %1$s
+            WHERE %2$s
+              AND %3$s
+              AND %1$s.id = (
+                SELECT %4$s.id
+                FROM planning_submissions %4$s
+                WHERE %5$s
+                ORDER BY %4$s.id DESC
+                LIMIT 1
+              )
+        )',
+        $normalizedSubmissionAlias,
+        implode(' AND ', $conditions)
+        ,
+        validatedPlanningSubmissionCondition($normalizedSubmissionAlias),
+        $latestSubmissionAlias,
+        implode(' AND ', $latestConditions)
+    );
 }
 
 function currentUserId(): ?int

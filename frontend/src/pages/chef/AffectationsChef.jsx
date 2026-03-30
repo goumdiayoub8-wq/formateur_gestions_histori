@@ -3,16 +3,13 @@ import { Sparkles, WandSparkles } from 'lucide-react';
 import FormateurService from '../../services/formateurService';
 import ModuleService from '../../services/moduleService';
 import AffectationService from '../../services/affectationService';
-import PlanningService from '../../services/planningService';
 import DashboardService from '../../services/dashboardService';
 import AcademicConfigService from '../../services/academicConfigService';
 import SmartAssignmentService from '../../services/smartAssignmentService';
 import {
-  buildAssignmentSuggestions,
   buildModuleCode,
   buildTrainerStatsMap,
   formatHours,
-  getAcademicWeekNumber,
   getAcademicYearValue,
   safeNumber,
 } from '../../utils/chefDashboard';
@@ -157,7 +154,6 @@ export default function AffectationsChef() {
   const [formateurs, setFormateurs] = useState([]);
   const [modules, setModules] = useState([]);
   const [affectations, setAffectations] = useState([]);
-  const [planningEntries, setPlanningEntries] = useState([]);
   const [dashboardPayload, setDashboardPayload] = useState(null);
   const [academicConfig, setAcademicConfig] = useState(null);
   const { toasts, pushToast, dismissToast } = useChefToasts();
@@ -170,14 +166,12 @@ export default function AffectationsChef() {
         formateursResponse,
         modulesResponse,
         affectationsResponse,
-        planningResponse,
         dashboardResponse,
         academicConfigResponse,
       ] = await Promise.all([
         FormateurService.list(),
         ModuleService.list(),
         AffectationService.list(),
-        PlanningService.getWeeklyPlanning(),
         DashboardService.getStats(),
         AcademicConfigService.getConfig(),
       ]);
@@ -185,7 +179,6 @@ export default function AffectationsChef() {
       setFormateurs(Array.isArray(formateursResponse) ? formateursResponse : []);
       setModules(Array.isArray(modulesResponse) ? modulesResponse : []);
       setAffectations(Array.isArray(affectationsResponse) ? affectationsResponse : []);
-      setPlanningEntries(Array.isArray(planningResponse) ? planningResponse : []);
       setDashboardPayload(dashboardResponse || {});
       setAcademicConfig(academicConfigResponse || null);
     } catch (loadError) {
@@ -207,22 +200,21 @@ export default function AffectationsChef() {
     () => getAcademicYearValue(academicConfig),
     [academicConfig],
   );
-  const currentWeek = useMemo(
-    () => getAcademicWeekNumber(academicConfig),
-    [academicConfig],
-  );
 
   const trainerStatsMap = useMemo(
     () =>
       buildTrainerStatsMap({
         formateurs,
         affectations,
-        planningEntries,
         dashboardStats: dashboardPayload?.formateurs || [],
         academicYear,
-        currentWeek,
       }),
-    [academicYear, currentWeek, affectations, dashboardPayload, formateurs, planningEntries],
+    [academicYear, affectations, dashboardPayload, formateurs],
+  );
+
+  const trainerMap = useMemo(
+    () => new Map(formateurs.map((formateur) => [safeNumber(formateur.id), formateur])),
+    [formateurs],
   );
 
   const assignedModuleIds = useMemo(
@@ -251,6 +243,7 @@ export default function AffectationsChef() {
 
     const loadSuggestions = async () => {
       if (!selectedModule) {
+        setSuggestionsLoading(false);
         setBackendSuggestions([]);
         return;
       }
@@ -292,93 +285,57 @@ export default function AffectationsChef() {
       return [];
     }
 
-    const localCandidates = buildAssignmentSuggestions({
-      module: selectedModule,
-      formateurs,
-      affectations,
-      planningEntries,
-      trainerStatsMap,
-      academicConfig,
-      academicYear,
+    return backendSuggestions.map((candidate) => {
+      const trainerId = safeNumber(candidate.id);
+      const trainer = trainerMap.get(trainerId) || {};
+      const trainerStats = trainerStatsMap[trainerId] || {};
+      const annualLimit = safeNumber(
+        trainerStats.max_heures,
+        safeNumber(trainer.max_heures, 910),
+      );
+      const moduleHours = safeNumber(selectedModule.volume_horaire);
+      const semester = String(selectedModule.semestre || '').toUpperCase();
+
+      return {
+        id: trainerId,
+        score: safeNumber(candidate.score),
+        remainingHours: safeNumber(candidate.heures_restantes),
+        assignedModules:
+          Array.isArray(trainerStats.assigned_modules) && trainerStats.assigned_modules.length > 0
+            ? trainerStats.assigned_modules
+            : (candidate.modules || []).map((code) => ({
+                id: `${trainerId}-${code}`,
+                code,
+                intitule: '',
+              })),
+        formateur: {
+          ...trainer,
+          nom: candidate.name || trainer.nom || 'Formateur',
+          specialite: candidate.specialite || trainer.specialite || '',
+          max_heures: annualLimit,
+        },
+        label: candidate.badge === 'best_match' ? 'Meilleur match' : 'Recommande',
+        backendReason: candidate.reason || null,
+        validation: {
+          valid: true,
+          errors: [],
+          warnings: [],
+          projectedAnnual: safeNumber(trainerStats.annual_hours) + moduleHours,
+          projectedWeekly: safeNumber(candidate.reason?.details?.projected_weekly_hours),
+          projectedS1Hours: safeNumber(trainerStats.s1_hours) + (semester === 'S1' ? moduleHours : 0),
+          projectedS2Hours: safeNumber(trainerStats.s2_hours) + (semester === 'S2' ? moduleHours : 0),
+        },
+      };
     });
-
-    const backendOrder = new Map(
-      backendSuggestions.map((candidate, index) => [safeNumber(candidate.id), index]),
-    );
-    const backendMap = new Map(
-      backendSuggestions.map((candidate) => [safeNumber(candidate.id), candidate]),
-    );
-
-    return localCandidates
-      .map((candidate) => {
-        const backendCandidate = backendMap.get(candidate.id);
-        if (!backendCandidate) {
-          return candidate;
-        }
-
-        return {
-          ...candidate,
-          score: safeNumber(backendCandidate.score, candidate.score),
-          remainingHours: safeNumber(
-            backendCandidate.heures_restantes,
-            candidate.remainingHours,
-          ),
-          assignedModules:
-            candidate.assignedModules.length > 0
-              ? candidate.assignedModules
-              : (backendCandidate.modules || []).map((code) => ({
-                  id: `${candidate.id}-${code}`,
-                  code,
-                })),
-          formateur: {
-            ...candidate.formateur,
-            nom: backendCandidate.name || candidate.formateur.nom,
-            specialite: backendCandidate.specialite || candidate.formateur.specialite,
-          },
-          label:
-            backendCandidate.badge === 'best_match'
-              ? 'Meilleur match'
-              : candidate.validation.valid
-                ? 'Recommande'
-                : candidate.label,
-          backendReason: backendCandidate.reason || null,
-        };
-      })
-      .sort((left, right) => {
-        const leftRank = backendOrder.has(left.id)
-          ? backendOrder.get(left.id)
-          : Number.MAX_SAFE_INTEGER;
-        const rightRank = backendOrder.has(right.id)
-          ? backendOrder.get(right.id)
-          : Number.MAX_SAFE_INTEGER;
-
-        if (leftRank !== rightRank) {
-          return leftRank - rightRank;
-        }
-
-        if (left.validation.errors.length !== right.validation.errors.length) {
-          return left.validation.errors.length - right.validation.errors.length;
-        }
-
-        if (left.score !== right.score) {
-          return right.score - left.score;
-        }
-
-        return String(left.formateur.nom || '').localeCompare(String(right.formateur.nom || ''));
-      });
   }, [
-    academicConfig,
-    academicYear,
-    affectations,
     backendSuggestions,
-    formateurs,
-    planningEntries,
     selectedModule,
+    trainerMap,
     trainerStatsMap,
   ]);
 
   const bestCandidate = useMemo(
-    () => suggestions.find((candidate) => candidate.validation.valid) || null,
+    () => suggestions[0] || null,
     [suggestions],
   );
 
@@ -424,7 +381,7 @@ export default function AffectationsChef() {
       <ChefPageHero
         icon={Sparkles}
         title="Appariement intelligent"
-        subtitle="Selectionnez un module libre, laissez le moteur classer les formateurs compatibles puis affectez en respectant 910h/an, 26h/semaine, EFM unique et l equilibre semestriel."
+        subtitle="Selectionnez un module libre, laissez le moteur classer les formateurs compatibles puis affectez en respectant 910h/an, 44h/semaine, EFM unique et l equilibre semestriel."
       />
 
       <ChefSection

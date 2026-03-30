@@ -4,14 +4,15 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
-  const devPort = 5173;
+  const devHost = env.VITE_DEV_HOST || '127.0.0.1';
+  const devPort = Number(env.VITE_DEV_PORT || 5173);
   const previewPort = Number(env.VITE_PREVIEW_PORT || 4173);
   const apiProxyTarget = env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:8000';
 
   return {
     plugins: [react(), tailwindcss()],
     server: {
-      host: true,
+      host: devHost,
       port: devPort,
       strictPort: true,
       watch: {
@@ -26,7 +27,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     preview: {
-      host: true,
+      host: devHost,
       port: previewPort,
     },
   };

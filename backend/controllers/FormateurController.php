@@ -37,6 +37,14 @@ class FormateurController
                 false,
                 1
             ) ?? 910,
+            'weekly_hours' => InputValidator::decimal(
+                ['weekly_hours' => $payload['weekly_hours'] ?? $payload['heures_hebdomadaires'] ?? null],
+                'weekly_hours',
+                'heures hebdomadaires',
+                false,
+                0.5,
+                44
+            ) ?? null,
         ];
 
         if (!empty($payload['mot_de_passe'])) {
@@ -125,7 +133,7 @@ class FormateurController
     {
         $userId = requireRole([3]);
         $formateur = $this->formateurs->findByUserId($userId);
-        $week = InputValidator::integer(['week' => requestQuery('week') ?? requestQuery('semaine')], 'week', 'semaine', false, 1, ACADEMIC_MAX_WEEKS) ?? currentAcademicWeek();
+        $week = InputValidator::integer(['week' => requestQuery('week') ?? requestQuery('semaine')], 'week', 'semaine', false, SYSTEM_WEEK_MIN, SYSTEM_WEEK_MAX) ?? currentAcademicWeek();
         $payload = $this->dashboard->trainerNotifications(intval($formateur['id']), $week, currentAcademicYear());
 
         jsonResponse([
@@ -140,7 +148,7 @@ class FormateurController
     {
         $userId = requireRole([3]);
         $formateur = $this->formateurs->findByUserId($userId);
-        $week = InputValidator::integer(['week' => requestQuery('week') ?? requestQuery('semaine')], 'week', 'semaine', false, 1, ACADEMIC_MAX_WEEKS) ?? currentAcademicWeek();
+        $week = InputValidator::integer(['week' => requestQuery('week') ?? requestQuery('semaine')], 'week', 'semaine', false, SYSTEM_WEEK_MIN, SYSTEM_WEEK_MAX) ?? currentAcademicWeek();
         $payload = $this->dashboard->trainerChangeRequests(intval($formateur['id']), $week, currentAcademicYear());
 
         jsonResponse([
@@ -158,9 +166,9 @@ class FormateurController
 
         $created = $this->dashboard->createTrainerChangeRequest(intval($formateur['id']), [
             'module_id' => InputValidator::integer($payload, 'module_id', 'module', true, 1),
-            'groupe_code' => InputValidator::string($payload, 'groupe_code', 'groupe', true, 40),
-            'semaine' => InputValidator::string($payload, 'semaine', 'semaine', true, 30),
-            'request_week' => InputValidator::integer($payload, 'request_week', 'semaine numerique', false, 1, ACADEMIC_MAX_WEEKS),
+            'groupe_code' => InputValidator::string($payload, 'groupe_code', 'groupe', false, 40),
+            'semaine' => InputValidator::string($payload, 'semaine', 'semaine', false, 30),
+            'request_week' => InputValidator::integer($payload, 'request_week', 'semaine numerique', false, SYSTEM_WEEK_MIN, SYSTEM_WEEK_MAX),
             'reason' => InputValidator::string($payload, 'reason', 'raison', true, 500),
         ], currentAcademicYear());
 

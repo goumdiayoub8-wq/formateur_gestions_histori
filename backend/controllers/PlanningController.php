@@ -29,8 +29,8 @@ class PlanningController
                 'semaine',
                 'semaine',
                 true,
-                1,
-                52
+                SYSTEM_WEEK_MIN,
+                SYSTEM_WEEK_MAX
             ),
             'heures' => InputValidator::decimal(
                 ['heures' => $payload['heures'] ?? $payload['heures_prevues'] ?? null],
@@ -60,8 +60,8 @@ class PlanningController
                 'week_number',
                 'semaine',
                 true,
-                1,
-                ACADEMIC_MAX_WEEKS
+                SYSTEM_WEEK_MIN,
+                SYSTEM_WEEK_MAX
             ),
             'day_of_week' => InputValidator::integer($payload, 'day_of_week', 'jour', true, 1, 7),
             'start_time' => $startTime,
@@ -136,7 +136,7 @@ class PlanningController
 
     public function getSessions(): void
     {
-        $week = InputValidator::integer(['week' => requestQuery('week') ?? requestQuery('semaine')], 'week', 'semaine', false, 1, ACADEMIC_MAX_WEEKS) ?? currentAcademicWeek();
+        $week = InputValidator::integer(['week' => requestQuery('week') ?? requestQuery('semaine')], 'week', 'semaine', false, SYSTEM_WEEK_MIN, SYSTEM_WEEK_MAX) ?? currentAcademicWeek();
         $formateurId = InputValidator::integer(['formateur_id' => requestQuery('formateur_id')], 'formateur_id', 'formateur', false, 1);
         $rows = $this->planning->sessions($week, $formateurId);
 
@@ -180,10 +180,38 @@ class PlanningController
         noContentResponse();
     }
 
+    public function updateSessionStatus(): void
+    {
+        $payload = readJsonBody();
+        $id = InputValidator::integer($payload, 'id', 'id', true, 1);
+        $status = strtolower(trim((string) (InputValidator::string($payload, 'status', 'statut', false, 20) ?? 'completed')));
+        if ($status !== 'completed') {
+            throw new ValidationException('Seul le statut completed est autorise pour cette action.');
+        }
+
+        $userId = requireRole([1, 2, 3]);
+        $roleId = currentUserRoleId();
+        $actorFormateurId = null;
+
+        if ($roleId === 3) {
+            $formateur = $this->formateurs->findByUserId($userId);
+            $actorFormateurId = intval($formateur['id'] ?? 0);
+        }
+
+        $session = $this->planning->completeSession($id, $actorFormateurId, $roleId);
+
+        jsonResponse([
+            'status' => 'success',
+            'message' => 'Creneau marque comme realise.',
+            'data' => $session,
+            'session' => $session,
+        ]);
+    }
+
     public function getTrainerVisibility(): void
     {
         $requestedTrainerId = requestQuery('formateur_id') ?? requestQuery('id');
-        $week = InputValidator::integer(['week' => requestQuery('week') ?? requestQuery('semaine')], 'week', 'semaine', false, 1, ACADEMIC_MAX_WEEKS) ?? currentAcademicWeek();
+        $week = InputValidator::integer(['week' => requestQuery('week') ?? requestQuery('semaine')], 'week', 'semaine', false, SYSTEM_WEEK_MIN, SYSTEM_WEEK_MAX) ?? currentAcademicWeek();
         $annee = InputValidator::integer(['annee' => requestQuery('annee')], 'annee', 'annee', false, 2000) ?? currentAcademicYear();
 
         if ($requestedTrainerId !== null && $requestedTrainerId !== '') {
@@ -205,7 +233,7 @@ class PlanningController
     public function getTeamVisibility(): void
     {
         requireRole([1, 2]);
-        $week = InputValidator::integer(['week' => requestQuery('week') ?? requestQuery('semaine')], 'week', 'semaine', false, 1, ACADEMIC_MAX_WEEKS) ?? currentAcademicWeek();
+        $week = InputValidator::integer(['week' => requestQuery('week') ?? requestQuery('semaine')], 'week', 'semaine', false, SYSTEM_WEEK_MIN, SYSTEM_WEEK_MAX) ?? currentAcademicWeek();
         $annee = InputValidator::integer(['annee' => requestQuery('annee')], 'annee', 'annee', false, 2000) ?? currentAcademicYear();
         $payload = $this->planning->teamVisibility($week, $annee);
 
@@ -219,7 +247,7 @@ class PlanningController
     public function getWeeklyStats(): void
     {
         $requestedTrainerId = requestQuery('formateur_id') ?? requestQuery('id');
-        $week = InputValidator::integer(['semaine' => requestQuery('week') ?? requestQuery('semaine')], 'semaine', 'semaine', false, 1, ACADEMIC_MAX_WEEKS) ?? currentAcademicWeek();
+        $week = InputValidator::integer(['semaine' => requestQuery('week') ?? requestQuery('semaine')], 'semaine', 'semaine', false, SYSTEM_WEEK_MIN, SYSTEM_WEEK_MAX) ?? currentAcademicWeek();
 
         if ($requestedTrainerId !== null && $requestedTrainerId !== '') {
             $formateurId = InputValidator::integer(['formateur_id' => $requestedTrainerId], 'formateur_id', 'formateur', true, 1);
@@ -236,6 +264,8 @@ class PlanningController
             'annual_target' => $overview['stats']['annual_target_hours'],
             'assigned_modules' => $overview['stats']['assigned_modules'],
             'pending_requests' => $overview['stats']['pending_requests'],
+            'weekly_target' => $overview['stats']['weekly_target_hours'] ?? 0,
+            'weekly_limit' => $overview['stats']['weekly_limit_hours'] ?? 44,
         ]);
 
         jsonResponse([
@@ -277,7 +307,7 @@ class PlanningController
     {
         $userId = requireRole([3]);
         $formateur = $this->formateurs->findByUserId($userId);
-        $week = InputValidator::integer(['semaine' => requestQuery('week') ?? requestQuery('semaine')], 'semaine', 'semaine', false, 1, ACADEMIC_MAX_WEEKS) ?? currentAcademicWeek();
+        $week = InputValidator::integer(['semaine' => requestQuery('week') ?? requestQuery('semaine')], 'semaine', 'semaine', false, SYSTEM_WEEK_MIN, SYSTEM_WEEK_MAX) ?? currentAcademicWeek();
         $overview = $this->dashboard->trainerOverview(intval($formateur['id']), $week, currentAcademicYear());
         $rows = $overview['modules'];
 
@@ -297,7 +327,7 @@ class PlanningController
         $decision = InputValidator::oneOf($payload, 'decision', 'decision', ['accept', 'reject']);
         $moduleId = InputValidator::integer($payload, 'module_id', 'module', true, 1);
         $groupeCode = InputValidator::string($payload, 'groupe_code', 'groupe', true, 60);
-        $weekNumber = InputValidator::integer($payload, 'request_week', 'semaine numerique', true, 1, ACADEMIC_MAX_WEEKS);
+        $weekNumber = InputValidator::integer($payload, 'request_week', 'semaine numerique', true, SYSTEM_WEEK_MIN, SYSTEM_WEEK_MAX);
         $dayLabel = InputValidator::string($payload, 'day_label', 'jour', false, 50) ?? '';
         $timeRange = InputValidator::string($payload, 'time_range', 'horaire', false, 60) ?? '';
 
@@ -327,7 +357,7 @@ class PlanningController
     {
         $payload = readJsonBody();
         $requestId = InputValidator::integer($payload, 'id', 'demande', true, 1);
-        $status = InputValidator::oneOf($payload, 'status', 'statut', ['approved', 'rejected', 'validated', 'confirmed']);
+        $status = InputValidator::oneOf($payload, 'status', 'statut', ['approved', 'rejected', 'validated']);
         $note = InputValidator::string($payload, 'note', 'note', false, 255);
 
         $updated = $this->dashboard->reviewTrainerChangeRequest($requestId, $status, $note);

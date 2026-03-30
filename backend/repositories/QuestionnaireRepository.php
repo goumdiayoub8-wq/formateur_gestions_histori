@@ -14,7 +14,7 @@ class QuestionnaireRepository
         $stmt = $this->db->query(
             'SELECT id, title, created_at
              FROM evaluation_questionnaires
-             ORDER BY id ASC
+             ORDER BY created_at DESC, id DESC
              LIMIT 1'
         );
         $row = $stmt->fetch();
@@ -64,6 +64,31 @@ class QuestionnaireRepository
         return $stmt->fetchAll();
     }
 
+    public function getGlobalScoresByQuestionnaire(int $questionnaireId): array
+    {
+        $stmt = $this->db->prepare(
+            'SELECT
+                q.id AS question_id,
+                COUNT(a.id) AS submissions_count,
+                AVG(
+                    CASE
+                        WHEN LOWER(TRIM(a.value)) IN ("yes", "oui", "true") THEN 5
+                        WHEN LOWER(TRIM(a.value)) IN ("no", "non", "false") THEN 1
+                        WHEN a.value REGEXP "^[0-9]+(\\.[0-9]+)?$" THEN LEAST(5, GREATEST(1, CAST(a.value AS DECIMAL(10,2))))
+                        ELSE NULL
+                    END
+                ) AS average_rating
+             FROM evaluation_questions q
+             LEFT JOIN evaluation_answers a ON a.question_id = q.id
+             WHERE q.questionnaire_id = :questionnaire_id
+             GROUP BY q.id
+             ORDER BY q.id ASC'
+        );
+        $stmt->execute(['questionnaire_id' => $questionnaireId]);
+
+        return $stmt->fetchAll();
+    }
+
     public function getScoreByFormateur(int $formateurId): ?array
     {
         $stmt = $this->db->prepare(
@@ -76,6 +101,7 @@ class QuestionnaireRepository
                 created_at
              FROM evaluation_scores
              WHERE formateur_id = :formateur_id
+             ORDER BY created_at DESC, id DESC
              LIMIT 1'
         );
         $stmt->execute(['formateur_id' => $formateurId]);

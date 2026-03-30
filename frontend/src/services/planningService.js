@@ -119,6 +119,19 @@ const PlanningService = {
     });
   },
 
+  completePlanningSession(id) {
+    return apiRequest({
+      url: `${PLANNING_BASE}?action=session-status`,
+      method: 'post',
+      data: { id, status: 'completed' },
+    }).then((response) => {
+      invalidateApiCache('planning:');
+      invalidateApiCache('dashboard:');
+      invalidateApiCache('formateur:notifications');
+      return response;
+    });
+  },
+
   saveWeeklyEntry(payload) {
     return apiRequest({
       url: `${PLANNING_BASE}?action=entry`,

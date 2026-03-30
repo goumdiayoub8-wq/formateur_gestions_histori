@@ -44,7 +44,7 @@ class QuestionnaireController
 
         jsonResponse([
             'status' => 'success',
-            'message' => 'Questionnaire soumis avec succes.',
+            'message' => 'Evaluation soumise avec succes.',
             'data' => $score,
             'score' => $score,
         ], 201);

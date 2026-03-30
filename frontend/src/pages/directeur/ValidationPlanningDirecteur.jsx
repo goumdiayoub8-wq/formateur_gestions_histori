@@ -20,8 +20,9 @@ function formatDateTime(value) {
   });
 }
 
-function hoursProgress(annualHours) {
-  return Math.max(0, Math.min((annualHours / 910) * 100, 100));
+function hoursProgress(annualHours, annualTarget = 910) {
+  const safeTarget = Number(annualTarget) > 0 ? Number(annualTarget) : 910;
+  return Math.max(0, Math.min((Number(annualHours || 0) / safeTarget) * 100, 100));
 }
 
 export default function ValidationPlanningDirecteur() {
@@ -52,7 +53,7 @@ export default function ValidationPlanningDirecteur() {
   }, [query]);
 
   const rows = dashboard?.queue || [];
-  const pendingIds = useMemo(() => rows.filter((row) => row.status === 'pending').map((row) => row.id), [rows]);
+  const pendingIds = useMemo(() => rows.filter((row) => row.status === 'pending' || row.status === 'revision').map((row) => row.id), [rows]);
   const submission = detail?.submission || null;
 
   const handleStatusUpdate = async (id, status) => {
@@ -175,14 +176,15 @@ export default function ValidationPlanningDirecteur() {
                   <th className="px-6 py-4">Spécialité</th>
                   <th className="px-6 py-4">Modules enseignés</th>
                   <th className="px-6 py-4">Contact</th>
-                  <th className="px-6 py-4">Heures cumulées</th>
+                  <th className="px-6 py-4">Charge annuelle</th>
                   <th className="px-6 py-4">Statut</th>
                   <th className="px-6 py-4">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row) => {
-                  const progress = hoursProgress(row.annual_hours);
+                  const annualTarget = Number(row.max_heures || 910);
+                  const progress = hoursProgress(row.annual_hours, annualTarget);
                   const actionKeyApprove = `approved-${row.id}`;
                   const actionKeyReject = `rejected-${row.id}`;
                   return (
@@ -203,7 +205,9 @@ export default function ValidationPlanningDirecteur() {
                         <div>{row.email}</div>
                       </td>
                       <td className="px-6 py-5">
-                        <div className="text-[15px] font-semibold text-[#17233a]">{row.annual_hours}h</div>
+                        <div className="text-[15px] font-semibold text-[#17233a]">
+                          {row.annual_hours}h / {annualTarget}h
+                        </div>
                         <div className="mt-2 h-2.5 w-[130px] overflow-hidden rounded-full bg-[#e5e7eb]">
                           <div
                             className={progress > 90 ? 'h-full rounded-full bg-[#ef4444]' : 'h-full rounded-full bg-[#22c55e]'}

@@ -9,7 +9,9 @@ require_once __DIR__ . '/../core/helpers.php';
 
 class ValidationService
 {
-    private const MAX_WEEKLY_HOURS = 26;
+    private const MAX_WEEKLY_HOURS = 44;
+    private const GRID_START_TIME = '08:00:00';
+    private const GRID_END_TIME = '18:00:00';
     private const SEMESTER_BALANCE_TOLERANCE_RATIO = 0.20;
     private const SEMESTER_BALANCE_MIN_TOLERANCE = 30.0;
 
@@ -72,8 +74,8 @@ class ValidationService
 
     public function validatePlanning(int $formateurId, int $moduleId, int $semaine, float $heures, ?int $ignorePlanningId = null): void
     {
-        if ($semaine < 1 || $semaine > ACADEMIC_MAX_WEEKS) {
-            throw new ValidationException('La semaine doit etre comprise entre 1 et 35.');
+        if ($semaine < SYSTEM_WEEK_MIN || $semaine > SYSTEM_WEEK_MAX) {
+            throw new ValidationException(sprintf('La semaine doit etre comprise entre %d et %d.', SYSTEM_WEEK_MIN, SYSTEM_WEEK_MAX));
         }
 
         if ($heures <= 0) {
@@ -92,7 +94,7 @@ class ValidationService
         $nextWeekHours = $weekHours + $heures;
 
         if ($nextWeekHours > self::MAX_WEEKLY_HOURS) {
-            throw new ValidationException('Le formateur depasserait la limite hebdomadaire de 26 heures.');
+            throw new ValidationException('Le formateur depasserait la limite hebdomadaire de 44 heures.');
         }
     }
 
@@ -106,8 +108,8 @@ class ValidationService
         float $durationHours,
         ?int $ignoreSessionId = null
     ): void {
-        if ($weekNumber < 1 || $weekNumber > ACADEMIC_MAX_WEEKS) {
-            throw new ValidationException('La semaine doit etre comprise entre 1 et 35.');
+        if ($weekNumber < SYSTEM_WEEK_MIN || $weekNumber > SYSTEM_WEEK_MAX) {
+            throw new ValidationException(sprintf('La semaine doit etre comprise entre %d et %d.', SYSTEM_WEEK_MIN, SYSTEM_WEEK_MAX));
         }
 
         if ($dayOfWeek < 1 || $dayOfWeek > 7) {
@@ -122,6 +124,13 @@ class ValidationService
             throw new ValidationException('L heure de fin doit etre posterieure a l heure de debut.');
         }
 
+        if (
+            strtotime('1970-01-01 ' . $startTime) < strtotime('1970-01-01 ' . self::GRID_START_TIME)
+            || strtotime('1970-01-01 ' . $endTime) > strtotime('1970-01-01 ' . self::GRID_END_TIME)
+        ) {
+            throw new ValidationException('Les creneaux doivent rester entre 08:00 et 18:00.');
+        }
+
         if (!$this->affectations->isModuleAssignedToTrainer($formateurId, $moduleId)) {
             throw new ValidationException('Le module doit d abord etre affecte a ce formateur.');
         }
@@ -134,7 +143,7 @@ class ValidationService
         $nextWeekHours = $weekHours + $durationHours;
 
         if ($nextWeekHours > self::MAX_WEEKLY_HOURS) {
-            throw new ValidationException('Le formateur depasserait la limite hebdomadaire de 26 heures.');
+            throw new ValidationException('Le formateur depasserait la limite hebdomadaire de 44 heures.');
         }
     }
 }

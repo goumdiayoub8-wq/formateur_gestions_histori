@@ -27,6 +27,7 @@ Services exposés :
 
 Le script détecte automatiquement `docker compose` ou `docker-compose`, démarre le frontend en mode Vite avec hot reload, attend que les services répondent, puis ouvre l’interface dans le navigateur par défaut.
 Il affiche aussi une URL LAN du type `http://192.168.x.x:5173` pour tester depuis un mobile sur le même réseau WiFi.
+Il crée aussi les fichiers d environnement locaux nécessaires pour relier le backend PHP au MySQL Docker (`3307`) et le frontend Vite au backend (`8000`).
 
 Comptes de démonstration :
 
@@ -68,6 +69,8 @@ cd ../frontend && npm install
 ```bash
 cp backend/.env.example backend/.env
 ```
+
+Si vous utilisez un utilisateur MySQL autre que `root` ou un mot de passe non vide, adaptez `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` et `DB_PASSWORD` dans `backend/.env` avant de lancer l API.
 
 4. Démarrer les services :
 

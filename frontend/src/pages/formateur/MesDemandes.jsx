@@ -5,7 +5,11 @@ import Spinner from '../../components/ui/Spinner';
 import { FormateurEmptyBlock, FormateurPanel, FormateurSectionHeader, FormateurStatCard } from '../../components/formateur/FormateurUI';
 
 function statusClasses(status) {
-  if (status === 'approved') {
+  if (status === 'planned') {
+    return 'bg-[#eef4ff] text-[#315cf0]';
+  }
+
+  if (status === 'validated' || status === 'approved') {
     return 'bg-[#e8f9ea] text-[#18a34a]';
   }
 
@@ -187,7 +191,7 @@ export default function MesDemandes() {
 
           <button
             type="submit"
-            disabled={saving || !formData.module_id || !formData.groupe_code || !formData.semaine || !formData.reason}
+            disabled={saving || !formData.module_id || !formData.reason}
             className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-[14px] bg-gradient-to-r from-[#b55af2] to-[#ac56f1] text-[15px] font-semibold text-white shadow-[0_18px_32px_rgba(176,89,242,0.25)] transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-70"
           >
             <SendHorizontal className="h-4 w-4" />
@@ -212,7 +216,13 @@ export default function MesDemandes() {
                   <p className="mt-3 text-[15px] text-[#334761]">{item.reason}</p>
                 </div>
                 <span className={`inline-flex shrink-0 rounded-full px-3 py-1 text-[13px] font-semibold ${statusClasses(item.status)}`}>
-                  {item.status === 'approved' ? 'Approuve' : item.status === 'rejected' ? 'Refuse' : 'En attente'}
+                  {item.status === 'planned'
+                    ? 'Planifie'
+                    : item.status === 'validated' || item.status === 'approved'
+                      ? 'Valide'
+                      : item.status === 'rejected'
+                        ? 'Refuse'
+                        : 'En attente'}
                 </span>
               </div>
             ))

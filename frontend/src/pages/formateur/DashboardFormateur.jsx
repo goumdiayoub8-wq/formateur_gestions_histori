@@ -153,7 +153,7 @@ export default function DashboardFormateur() {
   const [planningExportFeedback, setPlanningExportFeedback] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const { exporting, exportSinglePlanning } = useExportPDF();
+  const { exporting, exportSinglePlanning, exportStatusLabel } = useExportPDF();
   const {
     config,
     loading: academicLoading,
@@ -233,17 +233,27 @@ export default function DashboardFormateur() {
   }
 
   const annualHours = Number(overview?.stats?.annual_completed_hours || overview?.progress?.value || 0);
-  const progressPercent = Math.round((annualHours / 910) * 100);
+  const annualTarget = Number(
+    overview?.stats?.annual_target_hours
+      || overview?.progress?.target
+      || overview?.profile?.max_heures
+      || profile?.max_heures
+      || 910,
+  );
+  const normalizedAnnualTarget = annualTarget > 0 ? annualTarget : 910;
+  const progressPercent = Math.round((annualHours / normalizedAnnualTarget) * 100);
   const progress = {
     percent: Number.isFinite(progressPercent) ? progressPercent : 0,
     value: annualHours,
-    target: 910,
-    is_above_target: annualHours > 910,
+    target: normalizedAnnualTarget,
+    is_above_target: annualHours > normalizedAnnualTarget,
   };
   const stats = {
     assigned_modules: weeklyStats?.assigned_modules ?? overview?.stats?.assigned_modules ?? 0,
     groups_count: overview?.stats?.groups_count ?? 0,
     weekly_hours: weeklyStats?.weekly_hours ?? overview?.stats?.weekly_hours ?? 0,
+    weekly_target: weeklyStats?.weekly_target ?? overview?.stats?.weekly_target_hours ?? 0,
+    weekly_limit: weeklyStats?.weekly_limit ?? overview?.stats?.weekly_limit_hours ?? 44,
     notifications: notificationSummary?.total ?? 0,
   };
   const evaluation = overview?.evaluation || null;
@@ -328,7 +338,12 @@ export default function DashboardFormateur() {
           iconClassName="bg-[#ecfbf1] text-[#07b34a]"
           label="Heures/semaine"
           value={formatHourValue(stats.weekly_hours)}
-          progress={(Number(stats.weekly_hours || 0) / 26) * 100}
+          helper={
+            Number(stats.weekly_target || 0) > 0
+              ? `Cible ${formatHourValue(stats.weekly_target)}`
+              : `Limite ${formatHourValue(stats.weekly_limit)}`
+          }
+          progress={(Number(stats.weekly_hours || 0) / Math.max(1, Number(stats.weekly_limit || 44))) * 100}
         />
         <FormateurStatCard
           icon={Bell}
@@ -355,6 +370,7 @@ export default function DashboardFormateur() {
             <div className="flex items-center gap-3">
               <ExportFormateurButton
                 label="Exporter mon planning"
+                loadingLabel={exportStatusLabel}
                 position="bottom"
                 size="sm"
                 onClick={handleExportPlanning}

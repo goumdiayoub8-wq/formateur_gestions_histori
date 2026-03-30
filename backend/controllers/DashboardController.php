@@ -42,7 +42,7 @@ class DashboardController
     {
         $userId = requireRole([3]);
         $formateur = $this->formateurs->findByUserId($userId);
-        $week = InputValidator::integer(['week' => requestQuery('week') ?? requestQuery('semaine')], 'week', 'semaine', false, 1, ACADEMIC_MAX_WEEKS) ?? currentAcademicWeek();
+        $week = InputValidator::integer(['week' => requestQuery('week') ?? requestQuery('semaine')], 'week', 'semaine', false, SYSTEM_WEEK_MIN, SYSTEM_WEEK_MAX) ?? currentAcademicWeek();
         $overview = $this->dashboard->trainerOverview(intval($formateur['id']), $week, currentAcademicYear());
 
         jsonResponse([

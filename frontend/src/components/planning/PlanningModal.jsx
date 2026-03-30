@@ -83,7 +83,7 @@ export default function PlanningModal({
     groupe_id: '',
     salle_id: '',
     day_of_week: '1',
-    start_time: '08:30',
+    start_time: '08:00',
     duration_minutes: '120',
     task_title: 'Cours',
   });
@@ -101,7 +101,7 @@ export default function PlanningModal({
       groupe_id: initialEntry?.groupe_id ? String(initialEntry.groupe_id) : '',
       salle_id: initialEntry?.salle_id ? String(initialEntry.salle_id) : '',
       day_of_week: initialEntry?.day_of_week ? String(initialEntry.day_of_week) : '1',
-      start_time: initialEntry?.start_time?.slice(0, 5) || '08:30',
+      start_time: initialEntry?.start_time?.slice(0, 5) || '08:00',
       duration_minutes: normalizeDuration(initialEntry),
       task_title: initialEntry?.task_title || 'Cours',
     });
