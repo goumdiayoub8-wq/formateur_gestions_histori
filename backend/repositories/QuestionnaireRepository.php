@@ -130,7 +130,23 @@ class QuestionnaireRepository
 
     public function hasSubmitted(int $formateurId, ?int $moduleId = null): bool
     {
-        return $this->getScoreByFormateur($formateurId, $moduleId) !== null;
+        $moduleCondition = $moduleId !== null
+            ? 'AND module_id = :module_id'
+            : 'AND module_id IS NULL';
+        $stmt = $this->db->prepare(
+            'SELECT 1
+             FROM evaluation_scores
+             WHERE formateur_id = :formateur_id
+               ' . $moduleCondition . '
+             LIMIT 1'
+        );
+        $params = ['formateur_id' => $formateurId];
+        if ($moduleId !== null) {
+            $params['module_id'] = $moduleId;
+        }
+        $stmt->execute($params);
+
+        return $stmt->fetchColumn() !== false;
     }
 
     public function createAnswer(int $formateurId, ?int $moduleId, int $questionId, string $value): void
@@ -221,6 +237,8 @@ class QuestionnaireRepository
 
     public function findAccessibleQuestionnaireToken(int $formateurId, string $questionnaireToken, int $academicYear): ?array
     {
+        $lookupColumn = ctype_digit($questionnaireToken) ? 'mq.questionnaire_id' : 'mq.questionnaire_token';
+        $lookupParam = ctype_digit($questionnaireToken) ? 'legacy_questionnaire_id' : 'questionnaire_token';
         $stmt = $this->db->prepare(
             'SELECT DISTINCT
                 mq.module_id,
@@ -233,14 +251,13 @@ class QuestionnaireRepository
              INNER JOIN modules m ON m.id = mq.module_id
              WHERE a.formateur_id = :formateur_id
                AND a.annee = :academic_year
-               AND (mq.questionnaire_token = :questionnaire_token OR mq.questionnaire_id = :legacy_questionnaire_id)
+               AND ' . $lookupColumn . ' = :' . $lookupParam . '
              LIMIT 1'
         );
         $stmt->execute([
             'formateur_id' => $formateurId,
             'academic_year' => $academicYear,
-            'questionnaire_token' => $questionnaireToken,
-            'legacy_questionnaire_id' => $questionnaireToken,
+            $lookupParam => $questionnaireToken,
         ]);
         $row = $stmt->fetch();
 

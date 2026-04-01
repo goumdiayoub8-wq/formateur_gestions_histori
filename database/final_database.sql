@@ -494,11 +494,11 @@ VALUES
 INSERT INTO `module_questionnaires`
   (`id`, `module_id`, `questionnaire_id`, `questionnaire_token`, `total_questions`, `created_at`, `updated_at`)
 VALUES
-  (1, 1, 'module-1', '61d0d01710f24ec19424601b1e8c5af613f9e84eb627d3ef', 20, '2025-09-10 11:00:00', NULL),
-  (2, 2, 'module-2', '2677e45dc56549238848344c5f804f3d4c17af869b7ff262', 20, '2025-09-10 11:05:00', NULL),
-  (3, 3, 'module-3', '4ddf3717b12347a2afae33af30564671c77cc6d7a0e34a71', 20, '2025-09-10 11:10:00', NULL),
-  (4, 4, 'module-4', '4c93b53ae7c6413fb1b6d1fd5fe0ff8e7f9d0a9dca9f14c6', 20, '2025-09-10 11:15:00', NULL),
-  (5, 5, 'module-5', '7f04c6e21772444d8b211a2bda6dd22909e5636328702395', 20, '2025-09-10 11:20:00', NULL);
+  (1, 1, 'module-1', NULL, 20, '2025-09-10 11:00:00', NULL),
+  (2, 2, 'module-2', NULL, 20, '2025-09-10 11:05:00', NULL),
+  (3, 3, 'module-3', NULL, 20, '2025-09-10 11:10:00', NULL),
+  (4, 4, 'module-4', NULL, 20, '2025-09-10 11:15:00', NULL),
+  (5, 5, 'module-5', NULL, 20, '2025-09-10 11:20:00', NULL);
 
 INSERT INTO `groupes`
   (`id`, `code`, `nom`, `filiere`, `annee_scolaire`, `effectif`, `actif`, `created_at`, `updated_at`)

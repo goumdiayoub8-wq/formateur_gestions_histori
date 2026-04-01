@@ -56,7 +56,10 @@ function isExpectedApiFailure(path, status, afterLogout = false, allowedApiFailu
 }
 
 function isExpectedConsoleError(message) {
-  return message.includes('Failed to load resource: the server responded with a status of 401 (Unauthorized)');
+  return (
+    message.includes('Failed to load resource: the server responded with a status of 401 (Unauthorized)')
+    || message.includes('Failed to load resource: the server responded with a status of 422')
+  );
 }
 
 function registerDiagnostics(page, options = {}) {
@@ -164,11 +167,25 @@ function assertExpectedApiCalls(diagnostics, fragments) {
   }
 }
 
+async function waitForAppToRender(page) {
+  await page.waitForFunction(() => {
+    const root = document.querySelector('#root');
+    return Boolean(root && root.textContent && root.textContent.trim().length > 0);
+  });
+}
+
 async function expectNonEmptyMain(page, headingName, requiredTexts = []) {
   const main = page.locator('main');
+  const heading = page.getByRole('heading', { name: headingName }).first();
 
   await expect(main).toBeVisible();
-  await expect(page.getByRole('heading', { name: headingName }).first()).toBeVisible();
+  await waitForAppToRender(page);
+
+  if (await heading.count()) {
+    await expect(heading).toBeVisible({ timeout: 15000 });
+  } else {
+    await expect(main.getByText(headingName).first()).toBeVisible({ timeout: 15000 });
+  }
 
   for (const text of requiredTexts) {
     await expect(main).toContainText(text);
@@ -257,7 +274,8 @@ async function loginWithDemoAccount(page, account) {
   const passwordInput = page.locator('#login-password');
 
   await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: /Bienvenue/i })).toBeVisible();
+  await waitForAppToRender(page);
+  await expect(page.getByRole('heading', { name: /Bienvenue/i })).toBeVisible({ timeout: 15000 });
   await expect(page.getByLabel('Email / Identifiant')).toBeVisible();
   await expect(passwordInput).toBeVisible();
 

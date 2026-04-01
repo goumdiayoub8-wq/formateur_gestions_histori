@@ -17,7 +17,7 @@ class SearchRepository
         $modules = $this->searchModules($like, $limit);
         $groupes = $this->searchGroupes($like, $limit);
 
-        return array_merge($formateurs, $modules, $groupes);
+        return array_slice(array_merge($formateurs, $modules, $groupes), 0, $limit);
     }
 
     private function searchFormateurs(string $like, int $limit): array

@@ -221,6 +221,33 @@ function indexExists(PDO $connection, string $table, string $index): bool
     return (bool) $statement->fetch();
 }
 
+function generateSecureQuestionnaireToken(): string
+{
+    return strtolower(bin2hex(random_bytes(24)));
+}
+
+function moduleQuestionnaireTokenExists(PDO $connection, string $token): bool
+{
+    $statement = $connection->prepare(
+        'SELECT 1
+         FROM module_questionnaires
+         WHERE questionnaire_token = :questionnaire_token
+         LIMIT 1'
+    );
+    $statement->execute(['questionnaire_token' => $token]);
+
+    return $statement->fetchColumn() !== false;
+}
+
+function generateUniqueQuestionnaireToken(PDO $connection): string
+{
+    do {
+        $token = generateSecureQuestionnaireToken();
+    } while (moduleQuestionnaireTokenExists($connection, $token));
+
+    return $token;
+}
+
 function ensurePlanningSubmissionSnapshotColumns(PDO $connection): void
 {
     if (!tableExists($connection, 'planning_submissions')) {
@@ -290,15 +317,24 @@ function ensureModuleQuestionnairesTable(PDO $connection): void
         );
     }
 
-    $connection->exec(
-        'UPDATE module_questionnaires
-         SET questionnaire_token = SUBSTRING(
-             SHA2(CONCAT("mq:", module_id, ":", questionnaire_id, ":", UUID()), 256),
-             1,
-             48
-         )
+    $rows = $connection->query(
+        'SELECT id
+         FROM module_questionnaires
          WHERE questionnaire_token IS NULL OR TRIM(questionnaire_token) = ""'
     );
+    if ($rows !== false) {
+        $updateToken = $connection->prepare(
+            'UPDATE module_questionnaires
+             SET questionnaire_token = :questionnaire_token
+             WHERE id = :id'
+        );
+        foreach ($rows->fetchAll() as $row) {
+            $updateToken->execute([
+                'questionnaire_token' => generateUniqueQuestionnaireToken($connection),
+                'id' => intval($row['id']),
+            ]);
+        }
+    }
 
     if (!indexExists($connection, 'module_questionnaires', 'uq_module_questionnaires_token')) {
         $connection->exec(
@@ -417,17 +453,28 @@ function ensureModuleQuestionnaireMappings(PDO $connection): void
         return;
     }
 
-    $connection->exec(
-        'INSERT INTO module_questionnaires (module_id, questionnaire_id, questionnaire_token, total_questions)
-         SELECT
-            m.id,
-            CONCAT("module-", m.id),
-            SUBSTRING(SHA2(CONCAT("mq:", m.id, ":", UUID()), 256), 1, 48),
-            20
+    $rows = $connection->query(
+        'SELECT m.id
          FROM modules m
          LEFT JOIN module_questionnaires mq ON mq.module_id = m.id
          WHERE mq.id IS NULL'
     );
+    if ($rows === false) {
+        return;
+    }
+
+    $insertMapping = $connection->prepare(
+        'INSERT INTO module_questionnaires (module_id, questionnaire_id, questionnaire_token, total_questions)
+         VALUES (:module_id, :questionnaire_id, :questionnaire_token, 20)'
+    );
+    foreach ($rows->fetchAll() as $row) {
+        $moduleId = intval($row['id']);
+        $insertMapping->execute([
+            'module_id' => $moduleId,
+            'questionnaire_id' => 'module-' . $moduleId,
+            'questionnaire_token' => generateUniqueQuestionnaireToken($connection),
+        ]);
+    }
 }
 
 function getSystemMeta(PDO $connection, string $key): ?string

@@ -2,11 +2,7 @@ ALTER TABLE `module_questionnaires`
   ADD COLUMN `questionnaire_token` varchar(64) DEFAULT NULL AFTER `questionnaire_id`;
 
 UPDATE `module_questionnaires`
-SET `questionnaire_token` = SUBSTRING(
-  SHA2(CONCAT('mq:', `module_id`, ':', `questionnaire_id`, ':', UUID()), 256),
-  1,
-  48
-)
+SET `questionnaire_token` = LOWER(HEX(RANDOM_BYTES(24)))
 WHERE `questionnaire_token` IS NULL OR TRIM(`questionnaire_token`) = '';
 
 ALTER TABLE `module_questionnaires`

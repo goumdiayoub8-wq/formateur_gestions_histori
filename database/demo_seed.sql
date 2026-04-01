@@ -125,18 +125,18 @@ INSERT INTO `modules` (`id`, `code`, `intitule`, `filiere`, `semestre`, `volume_
   (12, 'TEST101', 'Mettre en place les tests logiciels', 'Qualite Logicielle', 'S1', 40, 0, '2025-09-10 09:33:00', NULL);
 
 INSERT INTO `module_questionnaires` (`id`, `module_id`, `questionnaire_id`, `questionnaire_token`, `total_questions`, `created_at`, `updated_at`) VALUES
-  (1, 1, 'module-1', '61d0d01710f24ec19424601b1e8c5af613f9e84eb627d3ef', 20, '2025-09-10 11:00:00', NULL),
-  (2, 2, 'module-2', '2677e45dc56549238848344c5f804f3d4c17af869b7ff262', 20, '2025-09-10 11:05:00', NULL),
-  (3, 3, 'module-3', '4ddf3717b12347a2afae33af30564671c77cc6d7a0e34a71', 20, '2025-09-10 11:10:00', NULL),
-  (4, 4, 'module-4', '4c93b53ae7c6413fb1b6d1fd5fe0ff8e7f9d0a9dca9f14c6', 20, '2025-09-10 11:15:00', NULL),
-  (5, 5, 'module-5', '7f04c6e21772444d8b211a2bda6dd22909e5636328702395', 20, '2025-09-10 11:20:00', NULL),
-  (6, 6, 'module-6', 'd53dc9ef7c9541ed9b0d6fdc6b5934cc72f17ae772f0b6a3', 20, '2025-09-10 11:25:00', NULL),
-  (7, 7, 'module-7', '5dc3b2374a6c4122a24ed5c1214df6627de6f987c15bf863', 20, '2025-09-10 11:30:00', NULL),
-  (8, 8, 'module-8', '48b7dd2866d34844a3fe3f64f9c769cde2a8ac45d4f736da', 20, '2025-09-10 11:35:00', NULL),
-  (9, 9, 'module-9', '5fd03c1bc0de4e16943801953ce6584da32c9b9fe69d305d', 20, '2025-09-10 11:40:00', NULL),
-  (10, 10, 'module-10', '2b3bce5fdb794dd5bb55f1a6f633d8a67db6c19bc480c4aa', 20, '2025-09-10 11:45:00', NULL),
-  (11, 11, 'module-11', 'fa9f2787be334dcda2bb51d5f89ba76322d8dd1c10cbf42d', 20, '2025-09-10 11:50:00', NULL),
-  (12, 12, 'module-12', 'b890e45183644b4da75d54f8717feca280c77bb8ec6d4a5a', 20, '2025-09-10 11:55:00', NULL);
+  (1, 1, 'module-1', NULL, 20, '2025-09-10 11:00:00', NULL),
+  (2, 2, 'module-2', NULL, 20, '2025-09-10 11:05:00', NULL),
+  (3, 3, 'module-3', NULL, 20, '2025-09-10 11:10:00', NULL),
+  (4, 4, 'module-4', NULL, 20, '2025-09-10 11:15:00', NULL),
+  (5, 5, 'module-5', NULL, 20, '2025-09-10 11:20:00', NULL),
+  (6, 6, 'module-6', NULL, 20, '2025-09-10 11:25:00', NULL),
+  (7, 7, 'module-7', NULL, 20, '2025-09-10 11:30:00', NULL),
+  (8, 8, 'module-8', NULL, 20, '2025-09-10 11:35:00', NULL),
+  (9, 9, 'module-9', NULL, 20, '2025-09-10 11:40:00', NULL),
+  (10, 10, 'module-10', NULL, 20, '2025-09-10 11:45:00', NULL),
+  (11, 11, 'module-11', NULL, 20, '2025-09-10 11:50:00', NULL),
+  (12, 12, 'module-12', NULL, 20, '2025-09-10 11:55:00', NULL);
 
 INSERT INTO `groupes` (`id`, `code`, `nom`, `filiere`, `annee_scolaire`, `effectif`, `actif`, `created_at`, `updated_at`) VALUES
   (1, 'DEV-1', 'Developpement Digital 1A', 'Developpement Digital', '2025-2026', 24, 1, '2025-09-12 09:00:00', NULL),

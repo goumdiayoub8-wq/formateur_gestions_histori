@@ -1,6 +1,14 @@
+const { execFileSync } = require('node:child_process');
 const { test, expect } = require('@playwright/test');
 
 const APP_URL = process.env.PLAYWRIGHT_APP_URL || 'http://127.0.0.1:5173';
+const DB_CONFIG = {
+  host: process.env.PLAYWRIGHT_DB_HOST || '127.0.0.1',
+  port: process.env.PLAYWRIGHT_DB_PORT || '3307',
+  name: process.env.PLAYWRIGHT_DB_NAME || 'gestion_formateurs',
+  user: process.env.PLAYWRIGHT_DB_USER || 'app',
+  password: process.env.PLAYWRIGHT_DB_PASSWORD || 'app',
+};
 const DEMO_FORMATEUR = {
   roleCardName: /Formateur/i,
   email: 'formateur@test.com',
@@ -22,6 +30,110 @@ function toPath(urlString) {
 
 function unique(values) {
   return [...new Set(values.filter(Boolean))];
+}
+
+function runMysql(query) {
+  return execFileSync(
+    'mysql',
+    [
+      '--batch',
+      '--raw',
+      '--skip-column-names',
+      '-h',
+      DB_CONFIG.host,
+      '-P',
+      String(DB_CONFIG.port),
+      '-u',
+      DB_CONFIG.user,
+      '-D',
+      DB_CONFIG.name,
+      '-e',
+      query,
+    ],
+    {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        MYSQL_PWD: DB_CONFIG.password,
+      },
+    },
+  ).trim();
+}
+
+function getQuestionnaireFixture() {
+  const payload = runMysql(`
+    SELECT JSON_OBJECT(
+      'formateur_id', a.formateur_id,
+      'module_id', m.id,
+      'module_name', m.intitule,
+      'token', mq.questionnaire_token,
+      'question_count', (
+        SELECT COUNT(*)
+        FROM evaluation_questions
+        WHERE questionnaire_id = (
+          SELECT id
+          FROM evaluation_questionnaires
+          ORDER BY created_at DESC, id DESC
+          LIMIT 1
+        )
+      )
+    )
+    FROM affectations a
+    INNER JOIN modules m ON m.id = a.module_id
+    INNER JOIN module_questionnaires mq ON mq.module_id = m.id
+    LEFT JOIN evaluation_scores es
+      ON es.formateur_id = a.formateur_id
+     AND es.module_id = m.id
+    WHERE a.formateur_id = 1
+      AND a.annee = 2026
+    ORDER BY CASE WHEN es.id IS NULL THEN 0 ELSE 1 END ASC, m.id ASC
+    LIMIT 1;
+  `);
+
+  return JSON.parse(payload);
+}
+
+function resetQuestionnaireSubmission(formateurId, moduleId) {
+  runMysql(`
+    DELETE FROM evaluation_answers
+    WHERE formateur_id = ${Number(formateurId)}
+      AND module_id = ${Number(moduleId)};
+
+    DELETE FROM evaluation_scores
+    WHERE formateur_id = ${Number(formateurId)}
+      AND module_id = ${Number(moduleId)};
+
+    DELETE FROM formateur_module_scores
+    WHERE formateur_id = ${Number(formateurId)}
+      AND module_id = ${Number(moduleId)};
+  `);
+}
+
+function getSubmissionSummary(formateurId, moduleId) {
+  const payload = runMysql(`
+    SELECT JSON_OBJECT(
+      'answer_count', (
+        SELECT COUNT(*)
+        FROM evaluation_answers
+        WHERE formateur_id = ${Number(formateurId)}
+          AND module_id = ${Number(moduleId)}
+      ),
+      'score_count', (
+        SELECT COUNT(*)
+        FROM evaluation_scores
+        WHERE formateur_id = ${Number(formateurId)}
+          AND module_id = ${Number(moduleId)}
+      ),
+      'module_score_count', (
+        SELECT COUNT(*)
+        FROM formateur_module_scores
+        WHERE formateur_id = ${Number(formateurId)}
+          AND module_id = ${Number(moduleId)}
+      )
+    );
+  `);
+
+  return JSON.parse(payload);
 }
 
 function isExpectedConsoleError(message) {
@@ -83,11 +195,19 @@ function assertNoClientOrApiErrors(diagnostics) {
   expect(unique(diagnostics.apiFailures), `Unexpected API failures detected:\n${diagnostics.apiFailures.join('\n\n')}`).toEqual([]);
 }
 
+async function waitForAppToRender(page) {
+  await page.waitForFunction(() => {
+    const root = document.querySelector('#root');
+    return Boolean(root && root.textContent && root.textContent.trim().length > 0);
+  });
+}
+
 async function loginWithDemoAccount(page, account) {
   const passwordInput = page.locator('#login-password');
 
   await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: /Bienvenue/i })).toBeVisible();
+  await waitForAppToRender(page);
+  await expect(page.getByRole('heading', { name: /Bienvenue/i })).toBeVisible({ timeout: 15000 });
   await page.getByRole('button', { name: account.roleCardName }).click();
   await expect(page.getByLabel('Email / Identifiant')).toHaveValue(account.email);
   await expect(passwordInput).toHaveValue('123456');
@@ -115,6 +235,26 @@ async function logoutFromQuestionnairePage(page) {
   await page.getByRole('button', { name: /Deconnexion/i }).click();
   const logoutResponse = await logoutResponsePromise;
   expect(logoutResponse.status()).toBe(200);
+}
+
+async function answerCurrentQuestion(page, stepIndex) {
+  const textAnswer = page.locator('textarea');
+  if (await textAnswer.count()) {
+    await textAnswer.fill(`Commentaire QA module ${stepIndex + 1}`);
+    return;
+  }
+
+  const binaryOptions = [
+    page.getByRole('button', { name: /^Oui/i }),
+    page.getByRole('button', { name: /^Non/i }),
+  ];
+  if (await binaryOptions[0].count()) {
+    await binaryOptions[stepIndex % binaryOptions.length].click();
+    return;
+  }
+
+  const ratingLabels = [/Excellent/i, /Solide/i, /Correct/i, /Fragile/i, /Insuffisant/i];
+  await page.getByRole('button', { name: ratingLabels[stepIndex % ratingLabels.length] }).click();
 }
 
 test('Mes Modules is the only UI entry point to the hidden questionnaire route and invalid tokens fail safely', async ({ page }) => {
@@ -197,4 +337,103 @@ test('Mes Modules is the only UI entry point to the hidden questionnaire route a
     diagnostics.apiCalls.filter((entry) => entry.includes('/api/questionnaire/score')),
     'The questionnaire page should load without a duplicate /questionnaire/score request.',
   ).toEqual([]);
+});
+
+test('Questionnaire flow stays module-scoped with required validation, navigation, progress, and final submission', async ({ page }) => {
+  test.setTimeout(120000);
+
+  const fixture = getQuestionnaireFixture();
+  resetQuestionnaireSubmission(fixture.formateur_id, fixture.module_id);
+
+  const diagnostics = registerDiagnostics(page, {
+    allowedApiFailures: ['GET /api/auth?action=check -> 401'],
+  });
+
+  const progressBar = page.getByRole('progressbar', { name: /Progression du questionnaire/i });
+  const nextButton = page.getByRole('button', { name: /^Suivant$/ });
+  const backButton = page.getByRole('button', { name: /^Retour$/ });
+
+  await test.step('Log in and open a module questionnaire reset to a clean state', async () => {
+    await loginWithDemoAccount(page, DEMO_FORMATEUR);
+
+    const questionnaireResponsePromise = page.waitForResponse((response) => {
+      const path = toPath(response.url());
+      return response.request().method() === 'GET' && path.includes(`/api/questionnaire?token=${fixture.token}`);
+    });
+
+    await page.goto(`${APP_URL}/questionnaire/${fixture.token}`, { waitUntil: 'domcontentloaded' });
+    const questionnaireResponse = await questionnaireResponsePromise;
+    expect(questionnaireResponse.status()).toBe(200);
+
+    await expect(page.getByRole('heading', { name: new RegExp(escapeRegExp(fixture.module_name), 'i') })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Commencer le questionnaire/i })).toBeVisible();
+  });
+
+  await test.step('Start the questionnaire and enforce the required first answer', async () => {
+    await page.getByRole('button', { name: /Commencer le questionnaire/i }).click();
+
+    await expect(page.getByText('Question 1', { exact: true })).toBeVisible();
+    await expect(progressBar).toHaveAttribute('aria-valuenow', String(Math.round((1 / fixture.question_count) * 100)));
+    await expect(backButton).toBeDisabled();
+    await expect(nextButton).toBeDisabled();
+
+    await answerCurrentQuestion(page, 0);
+    await expect(nextButton).toBeEnabled();
+  });
+
+  await test.step('Move forward, then back, while keeping the current progress coherent', async () => {
+    await nextButton.click();
+    await expect(page.getByText('Question 2', { exact: true })).toBeVisible();
+    await expect(progressBar).toHaveAttribute('aria-valuenow', String(Math.round((2 / fixture.question_count) * 100)));
+    await expect(backButton).toBeEnabled();
+
+    await backButton.click();
+    await expect(page.getByText('Question 1', { exact: true })).toBeVisible();
+    await expect(progressBar).toHaveAttribute('aria-valuenow', String(Math.round((1 / fixture.question_count) * 100)));
+    await expect(nextButton).toBeEnabled();
+
+    await nextButton.click();
+    await expect(page.getByText('Question 2', { exact: true })).toBeVisible();
+  });
+
+  await test.step('Answer the remaining questions and submit once the final step is reached', async () => {
+    for (let questionNumber = 2; questionNumber <= fixture.question_count; questionNumber += 1) {
+      await answerCurrentQuestion(page, questionNumber - 1);
+
+      if (questionNumber === fixture.question_count) {
+        await expect(progressBar).toHaveAttribute('aria-valuenow', '100');
+
+        const submitResponsePromise = page.waitForResponse((response) => {
+          const path = toPath(response.url());
+          return response.request().method() === 'POST' && path.includes(`/api/questionnaire/submit?token=${fixture.token}`);
+        });
+
+        await page.getByRole('button', { name: /^Envoyer$/ }).click();
+        const submitResponse = await submitResponsePromise;
+        expect(submitResponse.status()).toBe(201);
+      } else {
+        await nextButton.click();
+        await expect(page.getByText(`Question ${questionNumber + 1}`, { exact: true })).toBeVisible();
+      }
+    }
+
+    await expect(page.getByRole('heading', { name: /Merci, votre questionnaire est envoye/i })).toBeVisible();
+    await expect(page.getByText(/Votre evaluation a bien ete enregistree pour ce module/i)).toBeVisible();
+  });
+
+  await test.step('Persist the submission on the targeted module only', async () => {
+    const submissionSummary = getSubmissionSummary(fixture.formateur_id, fixture.module_id);
+
+    expect(submissionSummary.answer_count).toBe(fixture.question_count);
+    expect(submissionSummary.score_count).toBe(1);
+    expect(submissionSummary.module_score_count).toBe(1);
+
+    resetQuestionnaireSubmission(fixture.formateur_id, fixture.module_id);
+  });
+
+  await test.step('Log out cleanly after the completed questionnaire flow', async () => {
+    await logoutFromQuestionnairePage(page);
+  });
+
+  assertNoClientOrApiErrors(diagnostics);
 });

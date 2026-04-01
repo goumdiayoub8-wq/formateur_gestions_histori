@@ -22,7 +22,7 @@ class QuestionnaireService
         $normalizedToken = trim((string) $questionnaireToken);
 
         if ($normalizedToken === '') {
-            return null;
+            throw new NotFoundException('Questionnaire introuvable.');
         }
 
         if ($formateurId === null) {
