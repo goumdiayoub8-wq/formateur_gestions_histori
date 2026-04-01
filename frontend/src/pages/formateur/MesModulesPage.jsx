@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import ModuleService from '../../services/moduleService';
+import { Link } from 'react-router-dom';
 import PlanningService from '../../services/planningService';
 import FormateurService from '../../services/formateurService';
 import Spinner from '../../components/ui/Spinner';
@@ -18,7 +18,25 @@ function formatHourValue(value) {
   return Number.isInteger(numericValue) ? `${numericValue}h` : `${numericValue.toFixed(1).replace(/\.0$/, '')}h`;
 }
 
+function QuestionnaireStatusBadge({ status }) {
+  const isCompleted = status === 'completed';
+
+  return (
+    <span
+      className={`rounded-full px-3 py-1 text-[12px] font-semibold ${
+        isCompleted
+          ? 'bg-[#eafaf0] text-[#119548]'
+          : 'bg-[#eef3f9] text-[#60748f]'
+      }`}
+    >
+      {isCompleted ? 'Complété' : 'Non commencé'}
+    </span>
+  );
+}
+
 function ModuleOverviewItem({ module }) {
+  const hasQuestionnaireLink = Boolean(module.questionnaire_token);
+
   return (
     <div className="rounded-[20px] bg-[#f7f9fd] px-5 py-4">
       <div className="flex items-start justify-between gap-4">
@@ -33,6 +51,26 @@ function ModuleOverviewItem({ module }) {
         <span>{formatHourValue(module.weekly_hours)}/sem</span>
         <span>•</span>
         <span>{formatHourValue(module.volume_horaire)} total</span>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3 text-[13px] text-[#60748f]">
+        <QuestionnaireStatusBadge status={module.questionnaire_status} />
+        <span>
+          Score: {module.questionnaire_score === null || module.questionnaire_score === undefined ? '--' : `${Math.round(Number(module.questionnaire_score))}%`}
+        </span>
+        {module.rank_in_module ? (
+          <span>Rang {module.rank_in_module}/{module.total_formateurs || module.rank_in_module}</span>
+        ) : null}
+        {hasQuestionnaireLink ? (
+          <Link
+            to={`/questionnaire/${encodeURIComponent(module.questionnaire_token)}`}
+            className="inline-flex rounded-full border border-[#d9e2ef] bg-white px-3 py-1 font-semibold text-[#3567ff]"
+          >
+            Répondre au questionnaire
+          </Link>
+        ) : (
+          <span>Questionnaire indisponible</span>
+        )}
       </div>
     </div>
   );
@@ -65,10 +103,9 @@ export default function MesModulesPage() {
         setLoading(true);
         setError('');
 
-        const profileResponse = await FormateurService.getProfil();
-        const [planningModules, filteredModules, statsResponse] = await Promise.all([
+        const [profileResponse, planningModules, statsResponse] = await Promise.all([
+          FormateurService.getProfil(),
           PlanningService.getMesModules(),
-          ModuleService.list({ formateur_id: profileResponse?.id }),
           PlanningService.getWeeklyStats(),
         ]);
 
@@ -78,19 +115,36 @@ export default function MesModulesPage() {
 
         setProfile(profileResponse);
         setModules(
-          Array.isArray(planningModules) && planningModules.length
-            ? planningModules
-            : (filteredModules || []).map((module) => ({
-                ...module,
-                weekly_hours: 0,
-                completed_hours: 0,
-                progress_percent: 0,
-                group_codes: module.groupes || [],
-                groups: (module.groupes || []).map((code) => ({
-                  code,
-                  student_count: 20,
-                })),
-              })),
+          (Array.isArray(planningModules) ? planningModules : []).map((module) => {
+            return {
+              ...module,
+              weekly_hours: Number(module.weekly_hours || 0),
+              completed_hours: Number(module.completed_hours || 0),
+              progress_percent: Number(module.progress_percent || 0),
+              group_codes: Array.isArray(module.group_codes) ? module.group_codes : [],
+              groups: Array.isArray(module.groups)
+                ? module.groups.map((group) => ({
+                    ...group,
+                    nom: group.nom || group.name || group.code,
+                    student_count: Number(group.student_count || 0),
+                  }))
+                : [],
+              questionnaire_status: module.questionnaire_status || 'not_started',
+              questionnaire_score:
+                module.questionnaire_score === null || module.questionnaire_score === undefined
+                  ? null
+                  : Number(module.questionnaire_score),
+              questionnaire_token: module.questionnaire_token || null,
+              rank_in_module:
+                module.rank_in_module === null || module.rank_in_module === undefined
+                  ? null
+                  : Number(module.rank_in_module),
+              total_formateurs:
+                module.total_formateurs === null || module.total_formateurs === undefined
+                  ? 0
+                  : Number(module.total_formateurs),
+            };
+          }),
         );
         setWeeklyStats(statsResponse);
       } catch (loadError) {
@@ -120,8 +174,8 @@ export default function MesModulesPage() {
           seen.set(group.code, {
             id: group.code,
             code: group.code,
-            nom: module.filiere,
-            student_count: group.student_count,
+            nom: group.nom || group.code,
+            student_count: Number(group.student_count || 0),
           });
         }
       });
@@ -195,7 +249,7 @@ export default function MesModulesPage() {
             ) : (
               <FormateurEmptyBlock
                 title="Aucun module disponible"
-                description="Les modules filtres par votre compte apparaitront ici."
+                description="Vos modules affectes apparaitront ici des qu ils seront disponibles dans le backend."
               />
             )}
           </div>
@@ -241,6 +295,23 @@ export default function MesModulesPage() {
                       <p className="mt-1 text-[14px] text-[#7b8ca5]">
                         {formatHourValue(module.weekly_hours) || '0h'} par semaine
                       </p>
+                      <div className="mt-3 flex flex-wrap items-center gap-3 text-[13px] text-[#60748f]">
+                        <QuestionnaireStatusBadge status={module.questionnaire_status} />
+                        <span>
+                          Score: {module.questionnaire_score === null || module.questionnaire_score === undefined ? '--' : `${Math.round(Number(module.questionnaire_score))}%`}
+                        </span>
+                        {module.rank_in_module ? (
+                          <span>Rang {module.rank_in_module}/{module.total_formateurs || module.rank_in_module}</span>
+                        ) : null}
+                        {module.questionnaire_token ? (
+                          <Link
+                            to={`/questionnaire/${encodeURIComponent(module.questionnaire_token)}`}
+                            className="inline-flex rounded-full border border-[#d9e2ef] bg-white px-3 py-1 font-semibold text-[#3567ff]"
+                          >
+                            Répondre au questionnaire
+                          </Link>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="border-b border-[#edf2f8] px-2 py-4">
                       <div className="flex flex-wrap gap-2">

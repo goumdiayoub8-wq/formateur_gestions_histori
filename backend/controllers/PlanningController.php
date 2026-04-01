@@ -185,8 +185,8 @@ class PlanningController
         $payload = readJsonBody();
         $id = InputValidator::integer($payload, 'id', 'id', true, 1);
         $status = strtolower(trim((string) (InputValidator::string($payload, 'status', 'statut', false, 20) ?? 'completed')));
-        if ($status !== 'completed') {
-            throw new ValidationException('Seul le statut completed est autorise pour cette action.');
+        if (!in_array($status, ['completed', 'done'], true)) {
+            throw new ValidationException('Seuls les statuts completed et done sont autorises pour cette action.');
         }
 
         $userId = requireRole([1, 2, 3]);

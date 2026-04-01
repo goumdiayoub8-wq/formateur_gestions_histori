@@ -248,6 +248,29 @@ class PlanningService
         return 'Cours planifie';
     }
 
+    private function buildPlanningContextKey(int $moduleId, ?string $groupCode = null): string
+    {
+        return $moduleId . '|' . trim((string) ($groupCode ?? ''));
+    }
+
+    private function mapChangeRequestsByPlanningContext(array $requests): array
+    {
+        $map = [];
+
+        foreach ($requests as $request) {
+            $key = $this->buildPlanningContextKey(
+                intval($request['module_id'] ?? 0),
+                $request['groupe_code'] ?? ''
+            );
+
+            if (!isset($map[$key])) {
+                $map[$key] = $request;
+            }
+        }
+
+        return $map;
+    }
+
     private function roundHalfHour(float $value): float
     {
         return round($value * 2) / 2;
@@ -489,7 +512,7 @@ class PlanningService
         return $entries;
     }
 
-    private function buildScheduleFromSessions(array $sessions, array $modules, array $periods): array
+    private function buildScheduleFromSessions(array $sessions, array $modules, array $periods, array $requestMap = []): array
     {
         $moduleMap = [];
         foreach ($modules as $index => $module) {
@@ -499,11 +522,15 @@ class PlanningService
             ];
         }
 
-        return array_map(function (array $session) use ($moduleMap, $periods): array {
+        return array_map(function (array $session) use ($moduleMap, $periods, $requestMap): array {
             $moduleMeta = $moduleMap[intval($session['module_id'] ?? 0)] ?? null;
             $module = $moduleMeta['module'] ?? [];
             $startTime = $session['start_time'] ?? '08:00:00';
             $endTime = $session['end_time'] ?? '08:00:00';
+            $request = $requestMap[$this->buildPlanningContextKey(
+                intval($session['module_id'] ?? 0),
+                $session['groupe_code'] ?? ''
+            )] ?? null;
 
             return [
                 'id' => intval($session['id'] ?? 0),
@@ -528,6 +555,12 @@ class PlanningService
                 'status_label' => in_array(strtolower((string) ($session['status'] ?? 'scheduled')), ['completed', 'done'], true)
                     ? 'Realise'
                     : ($session['status'] ?: 'Planifie'),
+                'change_request' => $request ? [
+                    'id' => intval($request['id'] ?? 0),
+                    'status' => (string) ($request['status'] ?? 'pending'),
+                    'decision' => (string) ($request['decision'] ?? 'change'),
+                    'reason' => (string) ($request['reason'] ?? ''),
+                ] : null,
                 'accent' => $moduleMeta['accent'] ?? $this->buildAccent(intval($session['module_id'] ?? 0)),
             ];
         }, $sessions);
@@ -776,8 +809,15 @@ class PlanningService
         $periods = $this->checkAcademicPeriods($weekRange['start'] ?? null);
         $weeklyTarget = $this->resolveTrainerWeeklyTarget($trainer, $modules);
         $distribution = $this->buildModuleDistribution($modules, $weeklyTarget);
+        $requestMap = $this->mapChangeRequestsByPlanningContext(
+            $this->dashboard->getLatestTrainerChangeRequestsForWeek(
+                intval($trainer['id'] ?? 0),
+                $week,
+                $annee
+            )
+        );
         $schedule = $sessions !== []
-            ? $this->buildScheduleFromSessions($sessions, $modules, $periods)
+            ? $this->buildScheduleFromSessions($sessions, $modules, $periods, $requestMap)
             : [];
         $dailyTotals = $this->buildDailyTotals($schedule);
         $weeklyHours = round(array_reduce($schedule, function (float $sum, array $entry): float {
@@ -1282,7 +1322,7 @@ class PlanningService
                 throw new ValidationException('Une seance future ne peut pas etre marquee comme realisee.');
             }
 
-            $this->planning->updateSessionStatus($id, 'completed');
+            $this->planning->updateSessionStatus($id, 'done');
 
             $updated = $this->planning->findSession($id);
             if (!$updated) {

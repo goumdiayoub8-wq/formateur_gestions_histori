@@ -50,7 +50,7 @@ final class SmartAssignmentServiceTest extends TestCase
         );
     }
 
-    public function testSuggestionsPreferHigherQuestionnaireScoreWhenAvailabilityMatches(): void
+    public function testSuggestionsPreferHigherModuleQuestionnaireScoreWhenAvailabilityMatches(): void
     {
         $suffix = bin2hex(random_bytes(4));
         $specialite = 'Developpement score ' . strtoupper($suffix);
@@ -58,8 +58,8 @@ final class SmartAssignmentServiceTest extends TestCase
         $trainerLow = $this->insertTrainer($suffix . 'l', $specialite);
         $targetModule = $this->insertModule($suffix . 't', 'DEV-' . strtoupper(substr($suffix, 0, 4)), $specialite, 28, 'S1');
 
-        $this->insertEvaluationScore($trainerHigh, 92);
-        $this->insertEvaluationScore($trainerLow, 58);
+        $this->insertModuleScore($trainerHigh, $targetModule, 92);
+        $this->insertModuleScore($trainerLow, $targetModule, 58);
 
         $suggestions = $this->service->suggestions($targetModule);
         $highIndex = $this->findSuggestionIndex($suggestions, $trainerHigh);
@@ -136,10 +136,7 @@ final class SmartAssignmentServiceTest extends TestCase
         $suggestion = $this->findSuggestion($this->service->suggestions($targetModule), $trainerId);
 
         self::assertGreaterThanOrEqual(0, floatval($suggestion['score'] ?? 0));
-        self::assertSame(
-            floatval($suggestion['reason']['components']['competence_level'] ?? 0),
-            floatval($suggestion['reason']['components']['questionnaire_score'] ?? -1)
-        );
+        self::assertSame(0.0, floatval($suggestion['reason']['components']['questionnaire_score'] ?? -1));
     }
 
     public function testSuggestionsHandleZeroQuestionnaireScoreSafely(): void
@@ -148,7 +145,7 @@ final class SmartAssignmentServiceTest extends TestCase
         $specialite = 'Zero Score ' . strtoupper($suffix);
         $trainerId = $this->insertTrainer($suffix, $specialite, 220);
         $targetModule = $this->insertModule($suffix . 't', 'ZER-' . strtoupper(substr($suffix, 0, 4)), $specialite, 16, 'S1');
-        $this->insertEvaluationScore($trainerId, 0);
+        $this->insertModuleScore($trainerId, $targetModule, 0);
 
         $suggestion = $this->findSuggestion($this->service->suggestions($targetModule), $trainerId);
 
@@ -236,6 +233,19 @@ final class SmartAssignmentServiceTest extends TestCase
             'formateur_id' => $formateurId,
             'module_id' => $moduleId,
             'annee' => $annee,
+        ]);
+    }
+
+    private function insertModuleScore(int $formateurId, int $moduleId, float $percentage): void
+    {
+        $stmt = $this->db->prepare(
+            'INSERT INTO formateur_module_scores (formateur_id, module_id, score, last_updated_at)
+             VALUES (:formateur_id, :module_id, :score, NOW())'
+        );
+        $stmt->execute([
+            'formateur_id' => $formateurId,
+            'module_id' => $moduleId,
+            'score' => round($percentage, 2),
         ]);
     }
 

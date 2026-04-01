@@ -46,7 +46,7 @@ class SmartAssignmentService
 
         $academicYear = currentAcademicYear();
         $currentWeek = currentAcademicWeek();
-        $trainers = $this->smart->listTrainersForSuggestions($academicYear, $currentWeek);
+        $trainers = $this->smart->listTrainersForSuggestions($academicYear, $currentWeek, $moduleId);
         $trainerIds = array_map(static fn(array $trainer): int => intval($trainer['id']), $trainers);
         $assignedModulesByTrainer = $this->smart->getAssignedModuleCodesMap(
             $trainerIds,
@@ -208,9 +208,9 @@ class SmartAssignmentService
         $competenceLevel = $this->resolveCompetenceLevel($trainer, $module, $competenceLevelOverride);
         $competenceScore = ($competenceLevel / 5) * 100;
 
-        $questionnaireScore = $trainer['questionnaire_percentage'] !== null
-            ? max(0.0, min(100.0, floatval($trainer['questionnaire_percentage'])))
-            : $competenceScore;
+        $questionnaireScore = $trainer['module_questionnaire_percentage'] !== null
+            ? max(0.0, min(100.0, floatval($trainer['module_questionnaire_percentage'])))
+            : 0.0;
 
         $availability = $availabilityOverride ?? $this->buildAvailabilitySnapshot($trainer, $module);
         $remainingHours = $availability['remaining_hours'];

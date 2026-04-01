@@ -45,12 +45,14 @@ final class PlanningSessionCompletionTest extends TestCase
         self::assertSame(0.0, floatval($beforeReport['completed_hours'] ?? 0));
 
         $updated = $this->planning->completeSession($sessionId, $fixture['formateur_id'], 3);
+        $storedStatus = $this->fetchStoredSessionStatus($sessionId);
 
         $moduleRow = $this->findModuleProgressRow($fixture['module_id']);
         $trainerKpis = $this->dashboard->getTrainerKpis($fixture['formateur_id'], 26, 2026);
         $reportRow = $this->findWorkloadRow($fixture['formateur_id']);
 
         self::assertSame('completed', $updated['status']);
+        self::assertSame('done', $storedStatus);
         self::assertSame(2.0, floatval($moduleRow['completed_hours'] ?? 0));
         self::assertSame(20, intval($moduleRow['progress_percent'] ?? 0));
         self::assertSame(2.0, floatval($trainerKpis['annual_completed_hours'] ?? 0));
@@ -251,5 +253,13 @@ final class PlanningSessionCompletionTest extends TestCase
             'submitted_hours' => $submittedHours,
             'status' => $status,
         ]);
+    }
+
+    private function fetchStoredSessionStatus(int $sessionId): string
+    {
+        $stmt = $this->db->prepare('SELECT status FROM planning_sessions WHERE id = :id LIMIT 1');
+        $stmt->execute(['id' => $sessionId]);
+
+        return (string) ($stmt->fetchColumn() ?: '');
     }
 }

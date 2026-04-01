@@ -36,6 +36,7 @@ class DashboardRepository
     {
         $plannedHoursExpression = planningSessionHoursExpression('planned_sessions');
         $completedHoursExpression = completedPlanningSessionHoursExpression('completed_sessions');
+        $questionnairePercentageExpression = resolvedTrainerQuestionnairePercentageExpression('f.id');
         $validatedPlanningCondition = validatedPlanningSessionExistsCondition('planned_sessions', 'planned_submissions', currentAcademicYear());
         $currentWeekHoursExpression = planningSessionHoursExpression('current_week_sessions');
         $currentWeekValidatedCondition = validatedPlanningSessionExistsCondition('current_week_sessions', 'current_week_submissions', currentAcademicYear());
@@ -102,12 +103,11 @@ class DashboardRepository
                         GROUP BY weekly_sessions.week_number
                     ) AS trainer_weekly_totals
                 ), 0) AS max_week_hours,
-                CASE WHEN s.id IS NULL THEN NULL ELSE ROUND(s.percentage, 2) END AS questionnaire_percentage
+                CASE WHEN ' . $questionnairePercentageExpression . ' IS NULL THEN NULL ELSE ROUND(' . $questionnairePercentageExpression . ', 2) END AS questionnaire_percentage
              FROM formateurs f
              LEFT JOIN affectations a ON a.formateur_id = f.id
              LEFT JOIN modules m ON m.id = a.module_id
-             LEFT JOIN evaluation_scores s ON s.formateur_id = f.id
-             GROUP BY f.id, f.nom, f.email, f.specialite, f.max_heures, s.id, s.percentage
+             GROUP BY f.id, f.nom, f.email, f.specialite, f.max_heures
              ORDER BY f.nom'
         );
 
@@ -239,6 +239,335 @@ class DashboardRepository
         return $stmt->fetchAll();
     }
 
+    public function getModulePerformanceRows(int $annee, int $limit = 8): array
+    {
+        $completedSessionsCondition = completedPlanningSessionCondition('s');
+        $completedHoursExpression = completedPlanningSessionHoursExpression('s');
+        $stmt = $this->db->prepare(
+            'SELECT
+                m.id AS module_id,
+                COALESCE(m.code, CONCAT("M", LPAD(m.id, 3, "0"))) AS code,
+                m.intitule,
+                m.filiere,
+                m.volume_horaire,
+                f.id AS formateur_id,
+                f.nom AS formateur_nom,
+                COALESCE(progress.completed_hours, 0) AS completed_hours,
+                CASE
+                    WHEN score.percentage IS NULL THEN NULL
+                    ELSE ROUND(score.percentage, 2)
+                END AS questionnaire_percentage,
+                ROUND(
+                    LEAST(
+                        100,
+                        CASE
+                            WHEN m.volume_horaire = 0 THEN 0
+                            ELSE (COALESCE(progress.completed_hours, 0) / m.volume_horaire) * 100
+                        END
+                    ),
+                    0
+                ) AS completion_percent
+             FROM affectations a
+             INNER JOIN modules m ON m.id = a.module_id
+             INNER JOIN formateurs f ON f.id = a.formateur_id
+             LEFT JOIN (
+                SELECT
+                    s.formateur_id,
+                    s.module_id,
+                    ' . $completedHoursExpression . ' AS completed_hours
+                FROM planning_sessions s
+                WHERE ' . $completedSessionsCondition . '
+                GROUP BY s.formateur_id, s.module_id
+             ) progress ON progress.formateur_id = a.formateur_id
+                AND progress.module_id = a.module_id
+             LEFT JOIN (
+                SELECT
+                    es.formateur_id,
+                    es.module_id,
+                    MAX(es.percentage) AS percentage
+                FROM evaluation_scores es
+                WHERE es.module_id IS NOT NULL
+                GROUP BY es.formateur_id, es.module_id
+             ) score ON score.formateur_id = a.formateur_id
+                AND score.module_id = a.module_id
+             WHERE a.annee = :annee
+             ORDER BY completion_percent DESC, questionnaire_percentage DESC, m.intitule ASC
+             LIMIT :limit'
+        );
+        $stmt->bindValue(':annee', $annee, PDO::PARAM_INT);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return array_map(static function (array $row): array {
+            return [
+                'module_id' => intval($row['module_id'] ?? 0),
+                'code' => $row['code'],
+                'intitule' => $row['intitule'],
+                'filiere' => $row['filiere'],
+                'volume_horaire' => intval($row['volume_horaire'] ?? 0),
+                'formateur_id' => intval($row['formateur_id'] ?? 0),
+                'formateur_nom' => $row['formateur_nom'],
+                'completed_hours' => round(floatval($row['completed_hours'] ?? 0), 2),
+                'questionnaire_percentage' => $row['questionnaire_percentage'] !== null
+                    ? round(floatval($row['questionnaire_percentage']), 2)
+                    : null,
+                'completion_percent' => intval($row['completion_percent'] ?? 0),
+            ];
+        }, $stmt->fetchAll());
+    }
+
+    public function getModuleCompletionRows(int $limit = 8, string $direction = 'DESC'): array
+    {
+        $completedSessionsCondition = completedPlanningSessionCondition('s');
+        $completedHoursExpression = completedPlanningSessionHoursExpression('s');
+        $normalizedDirection = strtoupper($direction) === 'ASC' ? 'ASC' : 'DESC';
+        $stmt = $this->db->prepare(
+            'SELECT
+                m.id,
+                COALESCE(m.code, CONCAT("M", LPAD(m.id, 3, "0"))) AS code,
+                m.intitule,
+                m.filiere,
+                m.volume_horaire,
+                COALESCE(progress.completed_hours, 0) AS completed_hours,
+                COALESCE(assignments.formateur_nom, "Non affecte") AS formateur_nom,
+                ROUND(
+                    LEAST(
+                        100,
+                        CASE
+                            WHEN m.volume_horaire = 0 THEN 0
+                            ELSE (COALESCE(progress.completed_hours, 0) / m.volume_horaire) * 100
+                        END
+                    ),
+                    0
+                ) AS progress_percent
+             FROM modules m
+             LEFT JOIN (
+                SELECT
+                    s.module_id,
+                    ' . $completedHoursExpression . ' AS completed_hours
+                FROM planning_sessions s
+                WHERE ' . $completedSessionsCondition . '
+                GROUP BY s.module_id
+             ) progress ON progress.module_id = m.id
+             LEFT JOIN (
+                SELECT
+                    a.module_id,
+                    GROUP_CONCAT(DISTINCT f.nom ORDER BY f.nom SEPARATOR ", ") AS formateur_nom
+                FROM affectations a
+                INNER JOIN formateurs f ON f.id = a.formateur_id
+                WHERE a.annee = :annee
+                GROUP BY a.module_id
+             ) assignments ON assignments.module_id = m.id
+             ORDER BY progress_percent ' . $normalizedDirection . ', m.intitule ASC
+             LIMIT :limit'
+        );
+        $stmt->bindValue(':annee', currentAcademicYear(), PDO::PARAM_INT);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return array_map(static function (array $row): array {
+            return [
+                'id' => intval($row['id'] ?? 0),
+                'code' => $row['code'],
+                'intitule' => $row['intitule'],
+                'filiere' => $row['filiere'],
+                'volume_horaire' => intval($row['volume_horaire'] ?? 0),
+                'completed_hours' => round(floatval($row['completed_hours'] ?? 0), 2),
+                'formateur_nom' => $row['formateur_nom'],
+                'progress_percent' => intval($row['progress_percent'] ?? 0),
+            ];
+        }, $stmt->fetchAll());
+    }
+
+    public function getTeachingLoadTimeline(int $weekCount = 8, int $monthCount = 6): array
+    {
+        $plannedHoursExpression = planningSessionHoursExpression('s');
+        $validatedPlanningCondition = validatedPlanningSessionExistsCondition('s', 'ps', currentAcademicYear());
+        $completedSessionsCondition = completedPlanningSessionCondition('s');
+        $completedHoursExpression = completedPlanningSessionHoursExpression('s');
+
+        $weeklyStmt = $this->db->prepare(
+            'SELECT
+                s.week_number,
+                ROUND(' . $plannedHoursExpression . ', 2) AS hours
+             FROM planning_sessions s
+             WHERE s.week_number BETWEEN ' . SYSTEM_WEEK_MIN . ' AND ' . SYSTEM_WEEK_MAX . '
+               AND ' . $validatedPlanningCondition . '
+             GROUP BY s.week_number
+             ORDER BY s.week_number DESC
+             LIMIT :limit'
+        );
+        $weeklyStmt->bindValue(':limit', $weekCount, PDO::PARAM_INT);
+        $weeklyStmt->execute();
+
+        $monthlyStmt = $this->db->prepare(
+            'SELECT
+                DATE_FORMAT(COALESCE(s.session_date, s.week_start_date), "%Y-%m") AS month_key,
+                ROUND(' . $completedHoursExpression . ', 2) AS hours
+             FROM planning_sessions s
+             WHERE ' . $completedSessionsCondition . '
+             GROUP BY month_key
+             ORDER BY month_key DESC
+             LIMIT :limit'
+        );
+        $monthlyStmt->bindValue(':limit', $monthCount, PDO::PARAM_INT);
+        $monthlyStmt->execute();
+
+        $weekly = array_reverse(array_map(static function (array $row): array {
+            return [
+                'label' => 'S' . intval($row['week_number'] ?? 0),
+                'week_number' => intval($row['week_number'] ?? 0),
+                'hours' => round(floatval($row['hours'] ?? 0), 2),
+            ];
+        }, $weeklyStmt->fetchAll()));
+
+        $monthly = array_reverse(array_map(static function (array $row): array {
+            $monthKey = (string) ($row['month_key'] ?? '');
+            $label = $monthKey;
+
+            if (preg_match('/^(\d{4})-(\d{2})$/', $monthKey, $matches)) {
+                $monthNames = [
+                    '01' => 'Jan',
+                    '02' => 'Fev',
+                    '03' => 'Mar',
+                    '04' => 'Avr',
+                    '05' => 'Mai',
+                    '06' => 'Juin',
+                    '07' => 'Juil',
+                    '08' => 'Aout',
+                    '09' => 'Sep',
+                    '10' => 'Oct',
+                    '11' => 'Nov',
+                    '12' => 'Dec',
+                ];
+                $label = ($monthNames[$matches[2]] ?? $matches[2]) . ' ' . $matches[1];
+            }
+
+            return [
+                'label' => $label,
+                'month_key' => $monthKey,
+                'hours' => round(floatval($row['hours'] ?? 0), 2),
+            ];
+        }, $monthlyStmt->fetchAll()));
+
+        return [
+            'weekly' => $weekly,
+            'monthly' => $monthly,
+        ];
+    }
+
+    public function getHoursByFiliere(): array
+    {
+        $plannedHoursExpression = planningSessionHoursExpression('s');
+        $validatedPlanningCondition = validatedPlanningSessionExistsCondition('s', 'ps', currentAcademicYear());
+        $completedSessionsCondition = completedPlanningSessionCondition('s');
+        $completedHoursExpression = completedPlanningSessionHoursExpression('s');
+
+        $stmt = $this->db->query(
+            'SELECT
+                m.filiere,
+                COUNT(*) AS module_count,
+                COALESCE(SUM(m.volume_horaire), 0) AS total_module_hours,
+                COALESCE(SUM(planned.hours), 0) AS planned_hours,
+                COALESCE(SUM(completed.hours), 0) AS completed_hours
+             FROM modules m
+             LEFT JOIN (
+                SELECT
+                    s.module_id,
+                    ' . $plannedHoursExpression . ' AS hours
+                FROM planning_sessions s
+                WHERE ' . $validatedPlanningCondition . '
+                GROUP BY s.module_id
+             ) planned ON planned.module_id = m.id
+             LEFT JOIN (
+                SELECT
+                    s.module_id,
+                    ' . $completedHoursExpression . ' AS hours
+                FROM planning_sessions s
+                WHERE ' . $completedSessionsCondition . '
+                GROUP BY s.module_id
+             ) completed ON completed.module_id = m.id
+             GROUP BY m.filiere
+             ORDER BY completed_hours DESC, m.filiere ASC'
+        );
+
+        return array_map(static function (array $row): array {
+            $plannedHours = round(floatval($row['planned_hours'] ?? 0), 2);
+            $completedHours = round(floatval($row['completed_hours'] ?? 0), 2);
+            $totalModuleHours = round(floatval($row['total_module_hours'] ?? 0), 2);
+
+            return [
+                'filiere' => $row['filiere'] ?: 'Sans filiere',
+                'module_count' => intval($row['module_count'] ?? 0),
+                'total_module_hours' => $totalModuleHours,
+                'planned_hours' => $plannedHours,
+                'completed_hours' => $completedHours,
+                'completion_percent' => $totalModuleHours > 0
+                    ? intval(round(min(100, ($completedHours / $totalModuleHours) * 100)))
+                    : 0,
+            ];
+        }, $stmt->fetchAll());
+    }
+
+    public function getQuestionnaireAnalytics(int $annee): array
+    {
+        $stmt = $this->db->prepare(
+            'SELECT
+                COUNT(*) AS assigned_questionnaires,
+                SUM(CASE WHEN es.id IS NOT NULL THEN 1 ELSE 0 END) AS completed_questionnaires,
+                ROUND(AVG(es.percentage), 2) AS average_percentage
+             FROM affectations a
+             INNER JOIN module_questionnaires mq ON mq.module_id = a.module_id
+             LEFT JOIN evaluation_scores es ON es.formateur_id = a.formateur_id
+                AND es.module_id = a.module_id
+             WHERE a.annee = :annee'
+        );
+        $stmt->execute(['annee' => $annee]);
+        $row = $stmt->fetch() ?: [];
+
+        return [
+            'assigned_questionnaires' => intval($row['assigned_questionnaires'] ?? 0),
+            'completed_questionnaires' => intval($row['completed_questionnaires'] ?? 0),
+            'average_percentage' => $row['average_percentage'] !== null
+                ? round(floatval($row['average_percentage']), 2)
+                : null,
+        ];
+    }
+
+    public function getQuestionnaireModuleInsights(int $limit = 4, string $direction = 'DESC'): array
+    {
+        $normalizedDirection = strtoupper($direction) === 'ASC' ? 'ASC' : 'DESC';
+        $stmt = $this->db->prepare(
+            'SELECT
+                m.id,
+                COALESCE(m.code, CONCAT("M", LPAD(m.id, 3, "0"))) AS code,
+                m.intitule,
+                m.filiere,
+                COUNT(es.id) AS response_count,
+                ROUND(AVG(es.percentage), 2) AS average_percentage
+             FROM modules m
+             INNER JOIN module_questionnaires mq ON mq.module_id = m.id
+             LEFT JOIN evaluation_scores es ON es.module_id = m.id
+             GROUP BY m.id, m.code, m.intitule, m.filiere
+             HAVING response_count > 0
+             ORDER BY average_percentage ' . $normalizedDirection . ', response_count DESC, m.intitule ASC
+             LIMIT :limit'
+        );
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return array_map(static function (array $row): array {
+            return [
+                'id' => intval($row['id'] ?? 0),
+                'code' => $row['code'],
+                'intitule' => $row['intitule'],
+                'filiere' => $row['filiere'],
+                'response_count' => intval($row['response_count'] ?? 0),
+                'average_percentage' => round(floatval($row['average_percentage'] ?? 0), 2),
+            ];
+        }, $stmt->fetchAll());
+    }
+
     public function getTrainerKpis(int $formateurId, int $week, int $annee): array
     {
         $completedSessionsCondition = completedPlanningSessionCondition('s');
@@ -319,7 +648,20 @@ class DashboardRepository
                 COALESCE(executed.completed_hours, 0) AS completed_hours,
                 COALESCE(planned.weekly_hours, 0) AS weekly_hours,
                 COALESCE(GROUP_CONCAT(DISTINCT g.code ORDER BY g.code SEPARATOR " • "), "") AS groupes,
-                COALESCE(GROUP_CONCAT(DISTINCT CONCAT(g.code, "::", COALESCE(g.effectif, 20)) ORDER BY g.code SEPARATOR "|"), "") AS groupes_payload
+                COALESCE(
+                    GROUP_CONCAT(
+                        DISTINCT CONCAT(
+                            g.code,
+                            "::",
+                            REPLACE(REPLACE(COALESCE(g.nom, g.code), "|", "/"), "::", " - "),
+                            "::",
+                            COALESCE(g.effectif, 20)
+                        )
+                        ORDER BY g.code
+                        SEPARATOR "|"
+                    ),
+                    ""
+                ) AS groupes_payload
              FROM affectations a
              INNER JOIN modules m ON m.id = a.module_id
              LEFT JOIN (
@@ -379,13 +721,14 @@ class DashboardRepository
             $groups = [];
             if (!empty($row['groupes_payload'])) {
                 foreach (explode('|', $row['groupes_payload']) as $chunk) {
-                    [$code, $effectif] = array_pad(explode('::', $chunk, 2), 2, null);
+                    [$code, $groupName, $effectif] = array_pad(explode('::', $chunk, 3), 3, null);
                     if (!$code) {
                         continue;
                     }
 
                     $groups[] = [
                         'code' => $code,
+                        'nom' => $groupName ?: $code,
                         'student_count' => intval($effectif ?: 20),
                     ];
                 }
@@ -452,6 +795,7 @@ class DashboardRepository
                 created_at
              FROM evaluation_scores
              WHERE formateur_id = :formateur_id
+             ORDER BY created_at DESC, id DESC
              LIMIT 1'
         );
         $stmt->execute(['formateur_id' => $formateurId]);
@@ -579,6 +923,65 @@ class DashboardRepository
         }
 
         return [];
+    }
+
+    public function findDuplicatePendingTrainerChangeRequest(array $payload): ?array
+    {
+        $stmt = $this->db->prepare(
+            'SELECT
+                id,
+                formateur_id,
+                module_id,
+                groupe_code,
+                semaine,
+                request_week,
+                academic_year,
+                reason,
+                status,
+                created_at,
+                updated_at,
+                processed_at
+             FROM planning_change_requests
+             WHERE formateur_id = :formateur_id
+               AND module_id = :module_id
+               AND academic_year = :academic_year
+               AND status = "pending"
+               AND COALESCE(request_week, 0) = :request_week
+               AND COALESCE(TRIM(groupe_code), "") = :groupe_code
+               AND COALESCE(TRIM(semaine), "") = :semaine
+               AND COALESCE(TRIM(reason), "") = :reason
+             ORDER BY created_at DESC, id DESC
+             LIMIT 1'
+        );
+        $stmt->execute([
+            'formateur_id' => intval($payload['formateur_id'] ?? 0),
+            'module_id' => intval($payload['module_id'] ?? 0),
+            'academic_year' => intval($payload['academic_year'] ?? 0),
+            'request_week' => intval($payload['request_week'] ?? 0),
+            'groupe_code' => trim((string) ($payload['groupe_code'] ?? '')),
+            'semaine' => trim((string) ($payload['semaine'] ?? '')),
+            'reason' => trim((string) ($payload['reason'] ?? '')),
+        ]);
+
+        $row = $stmt->fetch();
+        if (!$row) {
+            return null;
+        }
+
+        return [
+            'id' => intval($row['id']),
+            'formateur_id' => intval($row['formateur_id']),
+            'module_id' => intval($row['module_id']),
+            'groupe_code' => $row['groupe_code'],
+            'semaine' => $row['semaine'],
+            'request_week' => $row['request_week'] !== null ? intval($row['request_week']) : null,
+            'academic_year' => intval($row['academic_year']),
+            'reason' => $row['reason'],
+            'status' => $row['status'],
+            'created_at' => $row['created_at'],
+            'updated_at' => $row['updated_at'],
+            'processed_at' => $row['processed_at'],
+        ];
     }
 
     public function getChefNotifications(): array
@@ -754,6 +1157,56 @@ class DashboardRepository
         $stmt->execute(array_merge([$formateurId, $moduleId], $params, [$weekNumber]));
 
         return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    }
+
+    public function getLatestTrainerChangeRequestsForWeek(int $formateurId, int $weekNumber, int $academicYear): array
+    {
+        $stmt = $this->db->prepare(
+            'SELECT
+                id,
+                module_id,
+                groupe_code,
+                request_week,
+                reason,
+                status,
+                created_at,
+                updated_at,
+                processed_at
+             FROM planning_change_requests
+             WHERE formateur_id = :formateur_id
+               AND academic_year = :academic_year
+               AND request_week = :week_number
+             ORDER BY created_at DESC, id DESC'
+        );
+        $stmt->execute([
+            'formateur_id' => $formateurId,
+            'academic_year' => $academicYear,
+            'week_number' => $weekNumber,
+        ]);
+
+        return array_map(static function (array $row): array {
+            $reason = (string) ($row['reason'] ?? '');
+            $decision = 'change';
+
+            if (stripos($reason, 'Confirmation du creneau') === 0) {
+                $decision = 'accept';
+            } elseif (stripos($reason, 'Refus du creneau') === 0) {
+                $decision = 'reject';
+            }
+
+            return [
+                'id' => intval($row['id']),
+                'module_id' => intval($row['module_id']),
+                'groupe_code' => trim((string) ($row['groupe_code'] ?? '')),
+                'request_week' => $row['request_week'] !== null ? intval($row['request_week']) : null,
+                'reason' => $reason,
+                'status' => (string) ($row['status'] ?? 'pending'),
+                'decision' => $decision,
+                'created_at' => $row['created_at'] ?? null,
+                'updated_at' => $row['updated_at'] ?? null,
+                'processed_at' => $row['processed_at'] ?? null,
+            ];
+        }, $stmt->fetchAll());
     }
 
     public function countPlanningSessionsForContext(int $formateurId, int $moduleId, int $weekNumber, ?string $groupCode = null): int

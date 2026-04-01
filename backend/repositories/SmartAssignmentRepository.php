@@ -33,9 +33,10 @@ class SmartAssignmentRepository
         return '0';
     }
 
-    public function listTrainersForSuggestions(int $annee, int $week): array
+    public function listTrainersForSuggestions(int $annee, int $week, ?int $moduleId = null): array
     {
         $plannedHoursExpression = planningSessionHoursExpression('weekly_sessions');
+        $questionnairePercentageExpression = resolvedTrainerQuestionnairePercentageExpression('f.id');
         $validatedPlanningCondition = validatedPlanningSessionExistsCondition('weekly_sessions', 'weekly_submissions', $annee);
         $stmt = $this->db->prepare(
             'SELECT
@@ -47,7 +48,8 @@ class SmartAssignmentRepository
                 COALESCE(workload.current_hours, 0) AS current_hours,
                 COALESCE(weekly.weekly_hours, 0) AS current_week_hours,
                 ' . $this->weeklyHoursSelect('f') . ' AS weekly_hours_target,
-                CASE WHEN s.id IS NULL THEN NULL ELSE ROUND(s.percentage, 2) END AS questionnaire_percentage
+                CASE WHEN ' . $questionnairePercentageExpression . ' IS NULL THEN NULL ELSE ROUND(' . $questionnairePercentageExpression . ', 2) END AS questionnaire_percentage,
+                CASE WHEN mqs.id IS NULL THEN NULL ELSE ROUND(mqs.score, 2) END AS module_questionnaire_percentage
              FROM formateurs f
              LEFT JOIN (
                 SELECT
@@ -66,13 +68,16 @@ class SmartAssignmentRepository
                 WHERE weekly_sessions.week_number = :week
                   AND ' . $validatedPlanningCondition . '
                 GROUP BY weekly_sessions.formateur_id
-             ) weekly ON weekly.formateur_id = f.id
-             LEFT JOIN evaluation_scores s ON s.formateur_id = f.id
+                 ) weekly ON weekly.formateur_id = f.id
+             LEFT JOIN formateur_module_scores mqs
+                ON mqs.formateur_id = f.id
+               AND mqs.module_id = :module_id
              ORDER BY f.nom ASC, f.id ASC'
         );
         $stmt->execute([
             'annee_workload' => $annee,
             'week' => $week,
+            'module_id' => $moduleId ?? 0,
         ]);
 
         return $stmt->fetchAll();

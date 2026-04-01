@@ -9,9 +9,10 @@ import {
   validateAcademicConfig,
 } from '../utils/dateUtils';
 
-export default function useAcademicConfig() {
+export default function useAcademicConfig(options = {}) {
+  const { enabled = true } = options;
   const [config, setConfig] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -30,8 +31,16 @@ export default function useAcademicConfig() {
   };
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      setError('');
+      setConfig(null);
+      return undefined;
+    }
+
     loadConfig();
-  }, []);
+    return undefined;
+  }, [enabled]);
 
   const validation = useMemo(() => validateAcademicConfig(config || {}), [config]);
 
@@ -75,6 +84,7 @@ export default function useAcademicConfig() {
   };
 
   return {
+    enabled,
     config,
     loading,
     saving,

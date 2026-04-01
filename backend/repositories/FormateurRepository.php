@@ -39,6 +39,10 @@ class FormateurRepository
 
     public function all(): array
     {
+        $questionnairePercentageExpression = resolvedTrainerQuestionnairePercentageExpression('f.id');
+        $questionnaireTotalScoreExpression = latestEvaluationScoreFieldExpression('f.id', 'total_score');
+        $questionnaireMaxScoreExpression = latestEvaluationScoreFieldExpression('f.id', 'max_score');
+        $questionnaireCreatedAtExpression = latestEvaluationScoreFieldExpression('f.id', 'created_at');
         $stmt = $this->db->query(
             'SELECT
                 f.id,
@@ -51,15 +55,14 @@ class FormateurRepository
                 f.max_heures AS max_hours,
                 ' . $this->weeklyHoursSelect('f') . '
                 COALESCE(f.current_hours, 0) AS current_hours,
-                CASE WHEN s.id IS NULL THEN NULL ELSE ROUND(s.total_score, 2) END AS questionnaire_total_score,
-                CASE WHEN s.id IS NULL THEN NULL ELSE ROUND(s.max_score, 2) END AS questionnaire_max_score,
-                CASE WHEN s.id IS NULL THEN NULL ELSE ROUND(s.percentage, 2) END AS questionnaire_percentage,
-                CASE WHEN s.id IS NULL THEN NULL ELSE ROUND(s.percentage, 2) END AS questionnaire_score,
-                s.created_at AS questionnaire_created_at,
+                CASE WHEN ' . $questionnaireTotalScoreExpression . ' IS NULL THEN NULL ELSE ROUND(' . $questionnaireTotalScoreExpression . ', 2) END AS questionnaire_total_score,
+                CASE WHEN ' . $questionnaireMaxScoreExpression . ' IS NULL THEN NULL ELSE ROUND(' . $questionnaireMaxScoreExpression . ', 2) END AS questionnaire_max_score,
+                CASE WHEN ' . $questionnairePercentageExpression . ' IS NULL THEN NULL ELSE ROUND(' . $questionnairePercentageExpression . ', 2) END AS questionnaire_percentage,
+                CASE WHEN ' . $questionnairePercentageExpression . ' IS NULL THEN NULL ELSE ROUND(' . $questionnairePercentageExpression . ', 2) END AS questionnaire_score,
+                ' . $questionnaireCreatedAtExpression . ' AS questionnaire_created_at,
                 f.created_at,
                 f.updated_at
              FROM formateurs f
-             LEFT JOIN evaluation_scores s ON s.formateur_id = f.id
              ORDER BY f.nom'
         );
 
@@ -68,6 +71,10 @@ class FormateurRepository
 
     public function find(int $id): ?array
     {
+        $questionnairePercentageExpression = resolvedTrainerQuestionnairePercentageExpression('f.id');
+        $questionnaireTotalScoreExpression = latestEvaluationScoreFieldExpression('f.id', 'total_score');
+        $questionnaireMaxScoreExpression = latestEvaluationScoreFieldExpression('f.id', 'max_score');
+        $questionnaireCreatedAtExpression = latestEvaluationScoreFieldExpression('f.id', 'created_at');
         $stmt = $this->db->prepare(
             'SELECT
                 f.id,
@@ -80,15 +87,14 @@ class FormateurRepository
                 f.max_heures AS max_hours,
                 ' . $this->weeklyHoursSelect('f') . '
                 COALESCE(f.current_hours, 0) AS current_hours,
-                CASE WHEN s.id IS NULL THEN NULL ELSE ROUND(s.total_score, 2) END AS questionnaire_total_score,
-                CASE WHEN s.id IS NULL THEN NULL ELSE ROUND(s.max_score, 2) END AS questionnaire_max_score,
-                CASE WHEN s.id IS NULL THEN NULL ELSE ROUND(s.percentage, 2) END AS questionnaire_percentage,
-                CASE WHEN s.id IS NULL THEN NULL ELSE ROUND(s.percentage, 2) END AS questionnaire_score,
-                s.created_at AS questionnaire_created_at,
+                CASE WHEN ' . $questionnaireTotalScoreExpression . ' IS NULL THEN NULL ELSE ROUND(' . $questionnaireTotalScoreExpression . ', 2) END AS questionnaire_total_score,
+                CASE WHEN ' . $questionnaireMaxScoreExpression . ' IS NULL THEN NULL ELSE ROUND(' . $questionnaireMaxScoreExpression . ', 2) END AS questionnaire_max_score,
+                CASE WHEN ' . $questionnairePercentageExpression . ' IS NULL THEN NULL ELSE ROUND(' . $questionnairePercentageExpression . ', 2) END AS questionnaire_percentage,
+                CASE WHEN ' . $questionnairePercentageExpression . ' IS NULL THEN NULL ELSE ROUND(' . $questionnairePercentageExpression . ', 2) END AS questionnaire_score,
+                ' . $questionnaireCreatedAtExpression . ' AS questionnaire_created_at,
                 f.created_at,
                 f.updated_at
              FROM formateurs f
-             LEFT JOIN evaluation_scores s ON s.formateur_id = f.id
              WHERE f.id = :id
              LIMIT 1'
         );
@@ -125,6 +131,49 @@ class FormateurRepository
         }
 
         $sql .= ' LIMIT 1';
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $row = $stmt->fetch();
+
+        return $row ?: null;
+    }
+
+    public function findByEmailOrLinkedUserEmail(string $email, ?int $ignoreId = null): ?array
+    {
+        $sql = 'SELECT
+                    f.id,
+                    f.nom,
+                    f.nom AS name,
+                    f.email,
+                    COALESCE(f.telephone, "") AS telephone,
+                    f.specialite,
+                    f.max_heures,
+                    f.max_heures AS max_hours,
+                    ' . ($this->hasWeeklyHoursColumn()
+                        ? 'COALESCE(f.weekly_hours, 0) AS weekly_hours,
+                           COALESCE(f.weekly_hours, 0) AS weekly_hours_target,'
+                        : '0 AS weekly_hours,
+                           0 AS weekly_hours_target,') . '
+                    COALESCE(f.current_hours, 0) AS current_hours
+                FROM formateurs f
+                LEFT JOIN utilisateurs u ON u.formateur_id = f.id
+                WHERE (
+                    f.email = :email
+                    OR u.email = :linked_user_email
+                )';
+        $params = [
+            'email' => $email,
+            'linked_user_email' => $email,
+        ];
+
+        if ($ignoreId !== null) {
+            $sql .= ' AND f.id <> :ignore_id';
+            $params['ignore_id'] = $ignoreId;
+        }
+
+        $sql .= ' ORDER BY CASE WHEN f.email = :preferred_email THEN 0 ELSE 1 END, f.id ASC LIMIT 1';
+        $params['preferred_email'] = $email;
 
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);

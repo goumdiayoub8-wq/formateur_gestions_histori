@@ -83,11 +83,11 @@ function App() {
           </Route>
 
           <Route element={<ProtectedRoute allowedRole={3} />}>
+            <Route path="/questionnaire/:token" element={<QuestionnaireEvaluationPage />} />
             <Route element={<FormateurLayout />}>
               <Route path="/formateur" element={<DashboardFormateur />} />
               <Route path="/formateur/planning" element={<MonPlanning />} />
               <Route path="/formateur/modules" element={<MesModulesPage />} />
-              <Route path="/formateur/questionnaire" element={<QuestionnaireEvaluationPage />} />
               <Route path="/formateur/demande" element={<MesDemandes />} />
               <Route path="/formateur/notifications" element={<NotificationsFormateur />} />
             </Route>

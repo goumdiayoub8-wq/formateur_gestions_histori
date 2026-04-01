@@ -20,10 +20,72 @@ function formatHourValue(value) {
   return Number.isInteger(numericValue) ? `${numericValue}H` : `${numericValue.toFixed(1).replace(/\.0$/, '')}H`;
 }
 
+function getEntryDisplayStatus(entry, localDecision) {
+  const sessionStatus = String(entry?.status || '').toLowerCase();
+  const requestStatus = String(entry?.change_request?.status || '').toLowerCase();
+  const requestDecision = String(localDecision || entry?.change_request?.decision || '').toLowerCase();
+
+  if (sessionStatus === 'completed' || sessionStatus === 'done') {
+    return {
+      label: 'Realise',
+      className: 'border-[#bfe8cb] bg-[#effcf3] text-[#1b7b48]',
+    };
+  }
+
+  if (requestStatus === 'pending' || localDecision) {
+    if (requestDecision === 'accept') {
+      return {
+        label: 'Acceptation en attente',
+        className: 'border-[#dbe4ff] bg-[#eef3ff] text-[#315cf0]',
+      };
+    }
+
+    if (requestDecision === 'reject') {
+      return {
+        label: 'Refus en attente',
+        className: 'border-[#ffe1e1] bg-[#fff3f3] text-[#c14c4c]',
+      };
+    }
+
+    return {
+      label: 'En attente chef',
+      className: 'border-[#dbe4ff] bg-[#eef3ff] text-[#315cf0]',
+    };
+  }
+
+  if (requestStatus === 'rejected') {
+    return {
+      label: 'Refuse',
+      className: 'border-[#ffe1e1] bg-[#fff3f3] text-[#c14c4c]',
+    };
+  }
+
+  if (requestStatus === 'validated') {
+    return {
+      label: 'Valide',
+      className: 'border-[#d8f0df] bg-[#f1fbf4] text-[#228252]',
+    };
+  }
+
+  if (requestStatus === 'planned') {
+    return {
+      label: 'Planifie par chef',
+      className: 'border-[#d8e5ff] bg-[#f4f8ff] text-[#496db2]',
+    };
+  }
+
+  return {
+    label: 'Planifie',
+    className: 'border-[#e3e9f3] bg-[#f7f9fd] text-[#5f718c]',
+  };
+}
+
 export default function MonPlanning() {
+  const academicConfigEnabled = false;
   const [weekNumber, setWeekNumber] = useState(null);
   const [stats, setStats] = useState(null);
   const [visibility, setVisibility] = useState(null);
+  const [decisionStateByEntryId, setDecisionStateByEntryId] = useState({});
   const [loading, setLoading] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState('');
   const [error, setError] = useState('');
@@ -38,21 +100,9 @@ export default function MonPlanning() {
     inStagePeriod,
     inExamPeriod,
     validation,
-  } = useAcademicConfig();
+  } = useAcademicConfig({ enabled: academicConfigEnabled });
 
   useEffect(() => {
-    if (weekNumber !== null || academicLoading) {
-      return;
-    }
-
-    setWeekNumber(Math.max(1, currentWeek ?? 1));
-  }, [academicLoading, currentWeek, weekNumber]);
-
-  useEffect(() => {
-    if (weekNumber === null) {
-      return undefined;
-    }
-
     let mounted = true;
 
     const loadPlanning = async (targetWeek) => {
@@ -72,6 +122,8 @@ export default function MonPlanning() {
 
         setStats(statsResponse);
         setVisibility(visibilityResponse || null);
+        setDecisionStateByEntryId({});
+        setWeekNumber((current) => current ?? Number(statsResponse?.week || targetWeek || 1));
       } catch (loadError) {
         if (mounted) {
           setError(loadError?.message || 'Impossible de charger le planning de la semaine.');
@@ -83,7 +135,7 @@ export default function MonPlanning() {
       }
     };
 
-    loadPlanning(weekNumber);
+    loadPlanning(weekNumber ?? undefined);
 
     return () => {
       mounted = false;
@@ -107,6 +159,7 @@ export default function MonPlanning() {
 
       setStats(statsResponse);
       setVisibility(visibilityResponse || null);
+      setDecisionStateByEntryId({});
     } catch (loadError) {
       setError(loadError?.message || 'Impossible de charger le planning de la semaine.');
     } finally {
@@ -121,6 +174,10 @@ export default function MonPlanning() {
   const alerts = Array.isArray(visibility?.alerts) ? visibility.alerts : [];
   const hasRealEntries = entries.length > 0;
   const hasValidAcademicConfig = Boolean(config && validation.isValid);
+  const fallbackAcademicYear = Number(stats?.academic_year || 0);
+  const displayAcademicYearLabel =
+    academicYearLabel || (fallbackAcademicYear > 0 ? `${fallbackAcademicYear - 1}-${fallbackAcademicYear}` : '');
+  const displayCurrentSemester = currentSemester || '-';
   const maxWeekNumber = useMemo(() => {
     if (!hasValidAcademicConfig) {
       return SYSTEM_WEEK_MAX;
@@ -135,11 +192,11 @@ export default function MonPlanning() {
     }
 
     if (!hasValidAcademicConfig) {
-      return 'Calendrier academique non configure';
+      return visibility?.week_range?.label || 'Calendrier academique non configure';
     }
 
     return getAcademicWeekRange(config.start_date, weekNumber);
-  }, [config, hasValidAcademicConfig, weekNumber]);
+  }, [config, hasValidAcademicConfig, visibility?.week_range?.label, weekNumber]);
 
   if (loading || weekNumber === null) {
     return (
@@ -169,8 +226,21 @@ export default function MonPlanning() {
           ? 'Votre acceptation a ete envoyee au chef de pôle et apparait maintenant en attente.'
           : 'Votre refus a ete envoye au chef de pôle et apparait maintenant en attente.',
       );
+      setDecisionStateByEntryId((current) => ({
+        ...current,
+        [entry.id]: decision,
+      }));
     } catch (submitError) {
-      setError(submitError?.message || "Impossible d'envoyer cette action au chef de pôle.");
+      const message = submitError?.message || "Impossible d'envoyer cette action au chef de pôle.";
+
+      if (/deja en attente/i.test(message)) {
+        setDecisionStateByEntryId((current) => ({
+          ...current,
+          [entry.id]: decision,
+        }));
+      }
+
+      setError(message);
     } finally {
       setActionLoadingId('');
     }
@@ -193,9 +263,19 @@ export default function MonPlanning() {
   };
 
   const canMarkCompleted = (entry) =>
-    Boolean(entry?.is_session) && String(entry?.status || '').toLowerCase() === 'scheduled';
+    Boolean(entry?.is_session)
+    && String(entry?.status || '').toLowerCase() === 'scheduled'
+    && Boolean(entry?.session_date)
+    && new Date(`${entry.session_date}T00:00:00`) <= new Date(new Date().toDateString());
 
-  const isCompletedSession = (entry) => ['completed', 'done'].includes(String(entry?.status || '').toLowerCase());
+  const hasLinkedRequest = (entry) => Boolean(entry?.change_request) || Boolean(decisionStateByEntryId[entry?.id]);
+  const hasPendingDecision = (entry) =>
+    Boolean(decisionStateByEntryId[entry?.id]) || String(entry?.change_request?.status || '').toLowerCase() === 'pending';
+  const canReviewEntry = (entry) =>
+    Boolean(entry?.is_session)
+    && String(entry?.status || '').toLowerCase() === 'scheduled'
+    && !hasPendingDecision(entry)
+    && !hasLinkedRequest(entry);
 
   const handleExportPlanning = async () => {
     try {
@@ -211,7 +291,7 @@ export default function MonPlanning() {
         },
         weekNumber,
         weekRange: visibility?.week_range?.label || weekRange,
-        academicYearLabel,
+        academicYearLabel: displayAcademicYearLabel,
       });
       setSuccess('Le PDF de votre planning a ete telecharge avec succes.');
     } catch (exportError) {
@@ -235,10 +315,10 @@ export default function MonPlanning() {
             </div>
             <div className="flex flex-wrap items-center gap-3 text-sm">
               <span className="rounded-full bg-white px-3 py-1.5 font-semibold text-[#24334f] shadow-[0_4px_12px_rgba(15,23,42,0.05)]">
-                {academicYearLabel || 'Annee non definie'}
+                {displayAcademicYearLabel || 'Annee non definie'}
               </span>
               <span className="rounded-full bg-white px-3 py-1.5 font-semibold text-[#24334f] shadow-[0_4px_12px_rgba(15,23,42,0.05)]">
-                {currentSemester || '-'}
+                {displayCurrentSemester}
               </span>
               {inStagePeriod ? <span className="rounded-full bg-[#20c05c] px-3 py-1.5 font-semibold text-white">Stage</span> : null}
               {inExamPeriod ? <span className="rounded-full bg-[#ff9b1f] px-3 py-1.5 font-semibold text-white">Exam</span> : null}
@@ -288,13 +368,13 @@ export default function MonPlanning() {
         </FormateurPanel>
       ) : null}
 
-      {!academicLoading && !config ? (
+      {academicConfigEnabled && !academicLoading && !config ? (
         <FormateurPanel className="border-[#ffe3ad] bg-[#fff8e9] px-6 py-5 text-[15px] font-medium text-[#9a6500]">
           Configurez l&apos;annee scolaire dans l&apos;espace directeur pour synchroniser le planning.
         </FormateurPanel>
       ) : null}
 
-      {!academicLoading && config && !validation.isValid ? (
+      {academicConfigEnabled && !academicLoading && config && !validation.isValid ? (
         <FormateurPanel className="border-[#ffd9d9] bg-[#fff5f5] px-6 py-5 text-[15px] font-medium text-[#d14343]">
           La configuration academique est invalide. Les semaines affichees peuvent etre incoherentes tant qu&apos;elle n&apos;est pas corrigee.
         </FormateurPanel>
@@ -411,7 +491,15 @@ export default function MonPlanning() {
                       {entry.room_code}
                     </td>
                     <td className="border-b border-[#edf2f8] px-4 py-5">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`inline-flex items-center rounded-full border px-3 py-2 text-[12px] font-semibold ${getEntryDisplayStatus(
+                            entry,
+                            decisionStateByEntryId[entry.id],
+                          ).className}`}
+                        >
+                          {getEntryDisplayStatus(entry, decisionStateByEntryId[entry.id]).label}
+                        </span>
                         {canMarkCompleted(entry) ? (
                           <button
                             type="button"
@@ -422,29 +510,28 @@ export default function MonPlanning() {
                             Marquer realise
                           </button>
                         ) : null}
-                        {isCompletedSession(entry) ? (
-                          <span className="inline-flex items-center rounded-full border border-[#bfe8cb] bg-[#effcf3] px-3 py-2 text-[12px] font-semibold text-[#1b7b48]">
-                            Realise
-                          </span>
+                        {canReviewEntry(entry) ? (
+                          <>
+                            <IconButton
+                              icon={Check}
+                              label="Accepter ce creneau"
+                              type="approve"
+                              size="sm"
+                              position="top"
+                              disabled={actionLoadingId === entry.id}
+                              onClick={() => handleEntryDecision(entry, 'accept')}
+                            />
+                            <IconButton
+                              icon={X}
+                              label="Refuser ce creneau"
+                              type="danger"
+                              size="sm"
+                              position="top"
+                              disabled={actionLoadingId === entry.id}
+                              onClick={() => handleEntryDecision(entry, 'reject')}
+                            />
+                          </>
                         ) : null}
-                        <IconButton
-                          icon={Check}
-                          label="Accepter ce creneau"
-                          type="approve"
-                          size="sm"
-                          position="top"
-                          disabled={actionLoadingId === entry.id}
-                          onClick={() => handleEntryDecision(entry, 'accept')}
-                        />
-                        <IconButton
-                          icon={X}
-                          label="Refuser ce creneau"
-                          type="danger"
-                          size="sm"
-                          position="top"
-                          disabled={actionLoadingId === entry.id}
-                          onClick={() => handleEntryDecision(entry, 'reject')}
-                        />
                       </div>
                     </td>
                   </tr>

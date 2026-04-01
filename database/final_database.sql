@@ -11,6 +11,8 @@ DROP TABLE IF EXISTS `evaluation_answers`;
 DROP TABLE IF EXISTS `evaluation_questions`;
 DROP TABLE IF EXISTS `evaluation_scores`;
 DROP TABLE IF EXISTS `evaluation_questionnaires`;
+DROP TABLE IF EXISTS `formateur_module_scores`;
+DROP TABLE IF EXISTS `module_questionnaires`;
 DROP TABLE IF EXISTS `request_throttles`;
 DROP TABLE IF EXISTS `ai_scores`;
 DROP TABLE IF EXISTS `formateur_modules`;
@@ -144,6 +146,26 @@ CREATE TABLE `module_groupes` (
     ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_module_groupes_groupe`
     FOREIGN KEY (`groupe_id`) REFERENCES `groupes` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `module_questionnaires` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `module_id` int NOT NULL,
+  `questionnaire_id` varchar(120) NOT NULL,
+  `questionnaire_token` varchar(64) DEFAULT NULL,
+  `google_form_id` varchar(191) DEFAULT NULL,
+  `total_questions` int NOT NULL DEFAULT 20,
+  `last_synced_at` datetime DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_module_questionnaires_module` (`module_id`),
+  UNIQUE KEY `uq_module_questionnaires_questionnaire` (`questionnaire_id`),
+  UNIQUE KEY `uq_module_questionnaires_token` (`questionnaire_token`),
+  UNIQUE KEY `uq_module_questionnaires_google_form` (`google_form_id`),
+  CONSTRAINT `fk_module_questionnaires_module`
+    FOREIGN KEY (`module_id`) REFERENCES `modules` (`id`)
     ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -333,6 +355,23 @@ CREATE TABLE `formateur_modules` (
     ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE `formateur_module_scores` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `formateur_id` int NOT NULL,
+  `module_id` int NOT NULL,
+  `score` decimal(5,2) NOT NULL DEFAULT 0.00,
+  `last_updated_at` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_formateur_module_scores_pair` (`formateur_id`,`module_id`),
+  KEY `idx_formateur_module_scores_module` (`module_id`),
+  CONSTRAINT `fk_formateur_module_scores_formateur`
+    FOREIGN KEY (`formateur_id`) REFERENCES `formateurs` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_formateur_module_scores_module`
+    FOREIGN KEY (`module_id`) REFERENCES `modules` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE `ai_scores` (
   `id` int NOT NULL AUTO_INCREMENT,
   `formateur_id` int NOT NULL,
@@ -392,15 +431,20 @@ CREATE TABLE `evaluation_questions` (
 CREATE TABLE `evaluation_answers` (
   `id` int NOT NULL AUTO_INCREMENT,
   `formateur_id` int NOT NULL,
+  `module_id` int DEFAULT NULL,
   `question_id` int NOT NULL,
   `value` text NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_answers_formateur_question` (`formateur_id`,`question_id`),
+  UNIQUE KEY `uq_answers_formateur_module_question` (`formateur_id`,`module_id`,`question_id`),
+  KEY `idx_answers_module` (`module_id`),
   KEY `idx_answers_question` (`question_id`),
   CONSTRAINT `fk_evaluation_answers_formateur`
     FOREIGN KEY (`formateur_id`) REFERENCES `formateurs` (`id`)
     ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_evaluation_answers_module`
+    FOREIGN KEY (`module_id`) REFERENCES `modules` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_evaluation_answers_question`
     FOREIGN KEY (`question_id`) REFERENCES `evaluation_questions` (`id`)
     ON DELETE CASCADE ON UPDATE CASCADE
@@ -409,15 +453,20 @@ CREATE TABLE `evaluation_answers` (
 CREATE TABLE `evaluation_scores` (
   `id` int NOT NULL AUTO_INCREMENT,
   `formateur_id` int NOT NULL,
+  `module_id` int DEFAULT NULL,
   `total_score` decimal(10,2) NOT NULL,
   `max_score` decimal(10,2) NOT NULL,
   `percentage` decimal(5,2) NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_scores_formateur` (`formateur_id`),
+  UNIQUE KEY `uq_scores_formateur_module` (`formateur_id`,`module_id`),
+  KEY `idx_scores_module` (`module_id`),
   KEY `idx_scores_percentage` (`percentage`),
   CONSTRAINT `fk_evaluation_scores_formateur`
     FOREIGN KEY (`formateur_id`) REFERENCES `formateurs` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_evaluation_scores_module`
+    FOREIGN KEY (`module_id`) REFERENCES `modules` (`id`)
     ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -441,6 +490,15 @@ VALUES
   (3, 'DS101', 'Concevoir une expérience UX', 'Design Digital', 'S1', 50, 0, '2025-09-10 09:10:00', NULL),
   (4, 'IA201', 'Introduire le machine learning', 'Intelligence Artificielle', 'S2', 70, 1, '2025-09-10 09:15:00', NULL),
   (5, 'SOFT101', 'Communication pédagogique', 'Tronc Commun', 'S1', 30, 0, '2025-09-10 09:20:00', NULL);
+
+INSERT INTO `module_questionnaires`
+  (`id`, `module_id`, `questionnaire_id`, `questionnaire_token`, `total_questions`, `created_at`, `updated_at`)
+VALUES
+  (1, 1, 'module-1', '61d0d01710f24ec19424601b1e8c5af613f9e84eb627d3ef', 20, '2025-09-10 11:00:00', NULL),
+  (2, 2, 'module-2', '2677e45dc56549238848344c5f804f3d4c17af869b7ff262', 20, '2025-09-10 11:05:00', NULL),
+  (3, 3, 'module-3', '4ddf3717b12347a2afae33af30564671c77cc6d7a0e34a71', 20, '2025-09-10 11:10:00', NULL),
+  (4, 4, 'module-4', '4c93b53ae7c6413fb1b6d1fd5fe0ff8e7f9d0a9dca9f14c6', 20, '2025-09-10 11:15:00', NULL),
+  (5, 5, 'module-5', '7f04c6e21772444d8b211a2bda6dd22909e5636328702395', 20, '2025-09-10 11:20:00', NULL);
 
 INSERT INTO `groupes`
   (`id`, `code`, `nom`, `filiere`, `annee_scolaire`, `effectif`, `actif`, `created_at`, `updated_at`)
@@ -532,6 +590,15 @@ VALUES
   (5, 3, 4, 5, '2025-09-20 10:34:00'),
   (6, 3, 2, 3, '2025-09-20 10:35:00');
 
+INSERT INTO `formateur_module_scores`
+  (`id`, `formateur_id`, `module_id`, `score`, `last_updated_at`)
+VALUES
+  (1, 1, 1, 88.50, '2025-10-10 09:15:00'),
+  (2, 1, 2, 91.20, '2025-10-12 10:00:00'),
+  (3, 2, 3, 86.40, '2025-10-11 14:30:00'),
+  (4, 2, 5, 79.10, '2025-10-13 11:20:00'),
+  (5, 3, 4, 83.75, '2025-10-14 16:00:00');
+
 INSERT INTO `ai_scores`
   (`id`, `formateur_id`, `module_id`, `score`, `reason`, `created_at`)
 VALUES
@@ -559,26 +626,26 @@ VALUES
   (6, 1, 'Commentaire complémentaire sur la prestation du formateur.', 'text', 0.00, '2025-09-01 08:10:00');
 
 INSERT INTO `evaluation_answers`
-  (`id`, `formateur_id`, `question_id`, `value`, `created_at`)
+  (`id`, `formateur_id`, `module_id`, `question_id`, `value`, `created_at`)
 VALUES
-  (1, 2, 1, '4', '2025-10-05 09:00:00'),
-  (2, 2, 2, '4', '2025-10-05 09:00:10'),
-  (3, 2, 3, '5', '2025-10-05 09:00:20'),
-  (4, 2, 4, 'yes', '2025-10-05 09:00:30'),
-  (5, 2, 5, 'yes', '2025-10-05 09:00:40'),
-  (6, 2, 6, 'Animation fluide et supports clairs.', '2025-10-05 09:00:50'),
-  (7, 3, 1, '3', '2025-10-06 10:00:00'),
-  (8, 3, 2, '4', '2025-10-06 10:00:10'),
-  (9, 3, 3, '3', '2025-10-06 10:00:20'),
-  (10, 3, 4, 'yes', '2025-10-06 10:00:30'),
-  (11, 3, 5, 'no', '2025-10-06 10:00:40'),
-  (12, 3, 6, 'Bonne base technique, mais les ateliers peuvent être mieux rythmés.', '2025-10-06 10:00:50');
+  (1, 2, 3, 1, '4', '2025-10-05 09:00:00'),
+  (2, 2, 3, 2, '4', '2025-10-05 09:00:10'),
+  (3, 2, 3, 3, '5', '2025-10-05 09:00:20'),
+  (4, 2, 3, 4, 'yes', '2025-10-05 09:00:30'),
+  (5, 2, 3, 5, 'yes', '2025-10-05 09:00:40'),
+  (6, 2, 3, 6, 'Animation fluide et supports clairs.', '2025-10-05 09:00:50'),
+  (7, 3, 4, 1, '3', '2025-10-06 10:00:00'),
+  (8, 3, 4, 2, '4', '2025-10-06 10:00:10'),
+  (9, 3, 4, 3, '3', '2025-10-06 10:00:20'),
+  (10, 3, 4, 4, 'yes', '2025-10-06 10:00:30'),
+  (11, 3, 4, 5, 'no', '2025-10-06 10:00:40'),
+  (12, 3, 4, 6, 'Bonne base technique, mais les ateliers peuvent être mieux rythmés.', '2025-10-06 10:00:50');
 
 INSERT INTO `evaluation_scores`
-  (`id`, `formateur_id`, `total_score`, `max_score`, `percentage`, `created_at`)
+  (`id`, `formateur_id`, `module_id`, `total_score`, `max_score`, `percentage`, `created_at`)
 VALUES
-  (1, 2, 30.00, 38.00, 78.95, '2025-10-05 09:01:00'),
-  (2, 3, 23.00, 38.00, 60.53, '2025-10-06 10:01:00');
+  (1, 2, 3, 30.00, 38.00, 78.95, '2025-10-05 09:01:00'),
+  (2, 3, 4, 23.00, 38.00, 60.53, '2025-10-06 10:01:00');
 
 INSERT INTO `system_meta` (`meta_key`, `meta_value`, `updated_at`) VALUES
   ('app_bootstrap_version', '2026-03-25-hardening', CURRENT_TIMESTAMP)

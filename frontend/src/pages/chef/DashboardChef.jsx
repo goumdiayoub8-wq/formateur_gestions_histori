@@ -12,6 +12,8 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -45,6 +47,10 @@ import { cn } from '../../lib/cn';
 
 function formatChartTick(value) {
   return `${Math.round(safeNumber(value))}h`;
+}
+
+function formatPercent(value) {
+  return `${Math.round(safeNumber(value))}%`;
 }
 
 function buildDistributionColor(ratio) {
@@ -308,6 +314,28 @@ export default function DashboardChef() {
     return dashboardTrainerRows.reduce((sum, row) => sum + safeNumber(row.current_week_hours), 0);
   }, [dashboardPayload, dashboardTrainerRows]);
 
+  const modulePerformanceRows = useMemo(
+    () => (Array.isArray(dashboardPayload?.module_performance) ? dashboardPayload.module_performance : []),
+    [dashboardPayload],
+  );
+
+  const moduleCompletionRows = useMemo(
+    () => (Array.isArray(dashboardPayload?.module_completion) ? dashboardPayload.module_completion : []),
+    [dashboardPayload],
+  );
+
+  const weeklyLoadTimeline = useMemo(
+    () => (Array.isArray(dashboardPayload?.teaching_load?.weekly) ? dashboardPayload.teaching_load.weekly : []),
+    [dashboardPayload],
+  );
+
+  const monthlyLoadTimeline = useMemo(
+    () => (Array.isArray(dashboardPayload?.teaching_load?.monthly) ? dashboardPayload.teaching_load.monthly : []),
+    [dashboardPayload],
+  );
+
+  const questionnaireAnalytics = dashboardPayload?.questionnaire_analytics || null;
+
   if (loading) {
     return <ChefLoadingState label="Chargement du dashboard Chef..." />;
   }
@@ -444,6 +472,191 @@ export default function DashboardChef() {
             />
           )}
         </ChefSection>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+        <ChefSection
+          title="Performance formateurs par module"
+          subtitle="Vue croisee utile pour arbitrer les modules les plus avances, les heures realisees et le niveau des evaluations."
+        >
+          {modulePerformanceRows.length ? (
+            <div className="space-y-4">
+              {modulePerformanceRows.map((row) => (
+                <div
+                  key={`${row.module_id}-${row.formateur_id}`}
+                  className="rounded-[20px] border border-[#e8eef7] bg-[#fbfdff] p-4"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-lg font-semibold text-[#1b2941]">
+                        {row.code} · {row.intitule}
+                      </p>
+                      <p className="mt-1 text-sm text-[#7b8ea8]">
+                        {row.formateur_nom} · {row.filiere}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <ChefBadge tone="blue">{formatPercent(row.completion_percent)} progression</ChefBadge>
+                      <ChefBadge tone={row.questionnaire_percentage !== null ? 'green' : 'slate'}>
+                        {row.questionnaire_percentage !== null
+                          ? `${formatPercent(row.questionnaire_percentage)} questionnaire`
+                          : 'Questionnaire en attente'}
+                      </ChefBadge>
+                    </div>
+                  </div>
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <ChefProgress
+                      value={row.completed_hours}
+                      max={row.volume_horaire}
+                      tone="blue"
+                      label="Execution module"
+                      rightLabel={`${formatHours(row.completed_hours)} / ${formatHours(row.volume_horaire)}`}
+                    />
+                    <ChefProgress
+                      value={row.questionnaire_percentage ?? 0}
+                      max={100}
+                      tone={row.questionnaire_percentage !== null && row.questionnaire_percentage >= 75 ? 'green' : 'orange'}
+                      label="Evaluation questionnaire"
+                      rightLabel={row.questionnaire_percentage !== null ? formatPercent(row.questionnaire_percentage) : 'Non repondu'}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <ChefEmptyState
+              title="Aucune performance module disponible"
+              description="Les indicateurs apparaitront ici des que des heures realisees et des questionnaires seront disponibles."
+            />
+          )}
+        </ChefSection>
+
+        <ChefSection
+          title="Suivi charge et evaluations"
+          subtitle="Lecture rapide de la charge recente et du taux de completion des questionnaires du pole."
+        >
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-[20px] border border-[#e8eef7] bg-[#fbfdff] p-4">
+              <p className="text-sm font-semibold uppercase tracking-[0.08em] text-[#7b8ea8]">Questionnaires</p>
+              <div className="mt-4 grid gap-4">
+                <div>
+                  <p className="text-[28px] font-bold text-[#1b2941]">
+                    {questionnaireAnalytics?.completion_rate ?? 0}%
+                  </p>
+                  <p className="text-sm text-[#7b8ea8]">Taux de reponse sur les questionnaires affectes</p>
+                </div>
+                <div>
+                  <p className="text-[28px] font-bold text-[#1b2941]">
+                    {questionnaireAnalytics?.average_percentage ?? 0}%
+                  </p>
+                  <p className="text-sm text-[#7b8ea8]">Score moyen des evaluations remplies</p>
+                </div>
+                <ChefProgress
+                  value={questionnaireAnalytics?.completed_questionnaires ?? 0}
+                  max={questionnaireAnalytics?.assigned_questionnaires ?? 0}
+                  tone="green"
+                  label="Couverture"
+                  rightLabel={`${questionnaireAnalytics?.completed_questionnaires ?? 0} / ${questionnaireAnalytics?.assigned_questionnaires ?? 0}`}
+                />
+              </div>
+            </div>
+
+            <div className="rounded-[20px] border border-[#e8eef7] bg-[#fbfdff] p-4">
+              <p className="text-sm font-semibold uppercase tracking-[0.08em] text-[#7b8ea8]">Charge recente</p>
+              <div className="mt-4 h-[220px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={weeklyLoadTimeline}>
+                    <CartesianGrid stroke="#e9eef6" strokeDasharray="3 3" vertical={false} />
+                    <XAxis
+                      dataKey="label"
+                      tickLine={false}
+                      axisLine={false}
+                      tick={{ fill: '#8a99ad', fontSize: 11 }}
+                    />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      tick={{ fill: '#8a99ad', fontSize: 11 }}
+                      tickFormatter={formatChartTick}
+                      width={40}
+                    />
+                    <Tooltip />
+                    <Line
+                      type="monotone"
+                      dataKey="hours"
+                      stroke="#4f46e5"
+                      strokeWidth={3}
+                      dot={{ r: 4, fill: '#4f46e5' }}
+                      activeDot={{ r: 6 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <div className="rounded-[20px] border border-[#e8eef7] bg-[#fbfdff] p-4">
+              <p className="text-sm font-semibold uppercase tracking-[0.08em] text-[#7b8ea8]">Charge mensuelle</p>
+              <div className="mt-4 space-y-3">
+                {monthlyLoadTimeline.length ? (
+                  monthlyLoadTimeline.map((row) => (
+                    <ChefProgress
+                      key={row.month_key}
+                      value={row.hours}
+                      max={Math.max(...monthlyLoadTimeline.map((entry) => entry.hours), 1)}
+                      tone="violet"
+                      label={row.label}
+                      rightLabel={formatHours(row.hours)}
+                    />
+                  ))
+                ) : (
+                  <ChefEmptyState
+                    title="Aucune charge mensuelle"
+                    description="Les heures realisees mensuelles seront visibles ici."
+                  />
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-[20px] border border-[#e8eef7] bg-[#fbfdff] p-4">
+              <p className="text-sm font-semibold uppercase tracking-[0.08em] text-[#7b8ea8]">Modules les plus avances</p>
+              <div className="mt-4 space-y-4">
+                {moduleCompletionRows.length ? (
+                  moduleCompletionRows.map((row) => (
+                    <div key={row.id} className="rounded-[18px] border border-[#edf2f8] bg-white px-4 py-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-base font-semibold text-[#1b2941]">
+                            {row.code} · {row.intitule}
+                          </p>
+                          <p className="mt-1 text-sm text-[#7b8ea8]">{row.formateur_nom}</p>
+                        </div>
+                        <ChefBadge tone={row.progress_percent >= 80 ? 'green' : row.progress_percent >= 50 ? 'orange' : 'red'}>
+                          {formatPercent(row.progress_percent)}
+                        </ChefBadge>
+                      </div>
+                      <div className="mt-3">
+                        <ChefProgress
+                          value={row.completed_hours}
+                          max={row.volume_horaire}
+                          tone="blue"
+                          rightLabel={`${formatHours(row.completed_hours)} / ${formatHours(row.volume_horaire)}`}
+                        />
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <ChefEmptyState
+                    title="Aucun module a suivre"
+                    description="La completion des modules apparaitra ici apres execution du planning."
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        </ChefSection>
+
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">

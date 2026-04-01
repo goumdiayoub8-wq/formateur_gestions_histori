@@ -12,7 +12,7 @@ if (!is_file($envPath)) {
     loadEnvironment($envExamplePath);
 }
 
-const APP_BOOTSTRAP_VERSION = '2026-03-25-hardening';
+const APP_BOOTSTRAP_VERSION = '2026-03-31-questionnaire-module-scope';
 
 function readLegacyDatabaseConfig(string $filePath): array
 {
@@ -210,6 +210,17 @@ function columnExists(PDO $connection, string $table, string $column): bool
     return (bool) $statement->fetch();
 }
 
+function indexExists(PDO $connection, string $table, string $index): bool
+{
+    $statement = $connection->query(sprintf(
+        "SHOW INDEX FROM `%s` WHERE Key_name = %s",
+        str_replace('`', '``', $table),
+        $connection->quote($index)
+    ));
+
+    return (bool) $statement->fetch();
+}
+
 function ensurePlanningSubmissionSnapshotColumns(PDO $connection): void
 {
     if (!tableExists($connection, 'planning_submissions')) {
@@ -236,6 +247,187 @@ function ensurePlanningSubmissionSnapshotColumns(PDO $connection): void
              ADD COLUMN snapshot_captured_at DATETIME DEFAULT NULL AFTER snapshot_total_hours'
         );
     }
+}
+
+function ensureModuleQuestionnairesTable(PDO $connection): void
+{
+    if (!tableExists($connection, 'modules')) {
+        return;
+    }
+
+    $connection->exec(
+        'CREATE TABLE IF NOT EXISTS module_questionnaires (
+            id int NOT NULL AUTO_INCREMENT,
+            module_id int NOT NULL,
+            questionnaire_id varchar(120) NOT NULL,
+            questionnaire_token varchar(64) DEFAULT NULL,
+            google_form_id varchar(191) DEFAULT NULL,
+            total_questions int NOT NULL DEFAULT 20,
+            created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at timestamp NULL DEFAULT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY uq_module_questionnaires_module (module_id),
+            UNIQUE KEY uq_module_questionnaires_questionnaire (questionnaire_id),
+            UNIQUE KEY uq_module_questionnaires_token (questionnaire_token),
+            UNIQUE KEY uq_module_questionnaires_google_form (google_form_id),
+            CONSTRAINT fk_module_questionnaires_module
+                FOREIGN KEY (module_id) REFERENCES modules (id)
+                ON DELETE CASCADE ON UPDATE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+
+    if (!columnExists($connection, 'module_questionnaires', 'last_synced_at')) {
+        $connection->exec(
+            'ALTER TABLE module_questionnaires
+             ADD COLUMN last_synced_at DATETIME DEFAULT NULL AFTER total_questions'
+        );
+    }
+
+    if (!columnExists($connection, 'module_questionnaires', 'questionnaire_token')) {
+        $connection->exec(
+            'ALTER TABLE module_questionnaires
+             ADD COLUMN questionnaire_token VARCHAR(64) DEFAULT NULL AFTER questionnaire_id'
+        );
+    }
+
+    $connection->exec(
+        'UPDATE module_questionnaires
+         SET questionnaire_token = SUBSTRING(
+             SHA2(CONCAT("mq:", module_id, ":", questionnaire_id, ":", UUID()), 256),
+             1,
+             48
+         )
+         WHERE questionnaire_token IS NULL OR TRIM(questionnaire_token) = ""'
+    );
+
+    if (!indexExists($connection, 'module_questionnaires', 'uq_module_questionnaires_token')) {
+        $connection->exec(
+            'ALTER TABLE module_questionnaires
+             ADD UNIQUE KEY uq_module_questionnaires_token (questionnaire_token)'
+        );
+    }
+}
+
+function ensureEvaluationSubmissionScopeColumns(PDO $connection): void
+{
+    if (!tableExists($connection, 'evaluation_answers') || !tableExists($connection, 'evaluation_scores')) {
+        return;
+    }
+
+    if (!columnExists($connection, 'evaluation_answers', 'module_id')) {
+        $connection->exec(
+            'ALTER TABLE evaluation_answers
+             ADD COLUMN module_id INT DEFAULT NULL AFTER formateur_id'
+        );
+    }
+
+    if (!indexExists($connection, 'evaluation_answers', 'idx_answers_formateur')) {
+        $connection->exec(
+            'ALTER TABLE evaluation_answers
+             ADD KEY idx_answers_formateur (formateur_id)'
+        );
+    }
+
+    if (!columnExists($connection, 'evaluation_scores', 'module_id')) {
+        $connection->exec(
+            'ALTER TABLE evaluation_scores
+             ADD COLUMN module_id INT DEFAULT NULL AFTER formateur_id'
+        );
+    }
+
+    if (!indexExists($connection, 'evaluation_scores', 'idx_scores_formateur')) {
+        $connection->exec(
+            'ALTER TABLE evaluation_scores
+             ADD KEY idx_scores_formateur (formateur_id)'
+        );
+    }
+
+    if (!indexExists($connection, 'evaluation_answers', 'uq_answers_formateur_module_question')) {
+        $connection->exec(
+            'ALTER TABLE evaluation_answers
+             ADD UNIQUE KEY uq_answers_formateur_module_question (formateur_id, module_id, question_id)'
+        );
+    }
+
+    if (!indexExists($connection, 'evaluation_answers', 'idx_answers_module')) {
+        $connection->exec(
+            'ALTER TABLE evaluation_answers
+             ADD KEY idx_answers_module (module_id)'
+        );
+    }
+
+    if (!indexExists($connection, 'evaluation_scores', 'uq_scores_formateur_module')) {
+        $connection->exec(
+            'ALTER TABLE evaluation_scores
+             ADD UNIQUE KEY uq_scores_formateur_module (formateur_id, module_id)'
+        );
+    }
+
+    if (!indexExists($connection, 'evaluation_scores', 'idx_scores_module')) {
+        $connection->exec(
+            'ALTER TABLE evaluation_scores
+             ADD KEY idx_scores_module (module_id)'
+        );
+    }
+
+    if (indexExists($connection, 'evaluation_answers', 'uq_answers_formateur_question')) {
+        $connection->exec(
+            'ALTER TABLE evaluation_answers
+             DROP INDEX uq_answers_formateur_question'
+        );
+    }
+
+    if (indexExists($connection, 'evaluation_scores', 'uq_scores_formateur')) {
+        $connection->exec(
+            'ALTER TABLE evaluation_scores
+             DROP INDEX uq_scores_formateur'
+        );
+    }
+}
+
+function ensureFormateurModuleScoresTable(PDO $connection): void
+{
+    if (!tableExists($connection, 'formateurs') || !tableExists($connection, 'modules')) {
+        return;
+    }
+
+    $connection->exec(
+        'CREATE TABLE IF NOT EXISTS formateur_module_scores (
+            id int NOT NULL AUTO_INCREMENT,
+            formateur_id int NOT NULL,
+            module_id int NOT NULL,
+            score decimal(5,2) NOT NULL DEFAULT 0.00,
+            last_updated_at datetime NOT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY uq_formateur_module_scores_pair (formateur_id, module_id),
+            KEY idx_formateur_module_scores_module (module_id),
+            CONSTRAINT fk_formateur_module_scores_formateur
+                FOREIGN KEY (formateur_id) REFERENCES formateurs (id)
+                ON DELETE CASCADE ON UPDATE CASCADE,
+            CONSTRAINT fk_formateur_module_scores_module
+                FOREIGN KEY (module_id) REFERENCES modules (id)
+                ON DELETE CASCADE ON UPDATE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+}
+
+function ensureModuleQuestionnaireMappings(PDO $connection): void
+{
+    if (!tableExists($connection, 'modules') || !tableExists($connection, 'module_questionnaires')) {
+        return;
+    }
+
+    $connection->exec(
+        'INSERT INTO module_questionnaires (module_id, questionnaire_id, questionnaire_token, total_questions)
+         SELECT
+            m.id,
+            CONCAT("module-", m.id),
+            SUBSTRING(SHA2(CONCAT("mq:", m.id, ":", UUID()), 256), 1, 48),
+            20
+         FROM modules m
+         LEFT JOIN module_questionnaires mq ON mq.module_id = m.id
+         WHERE mq.id IS NULL'
+    );
 }
 
 function getSystemMeta(PDO $connection, string $key): ?string
@@ -329,12 +521,20 @@ function getDatabaseConnection(): PDO
     ensureSystemMetaTable($connection);
     ensureRequestThrottlesTable($connection);
     ensurePlanningSubmissionSnapshotColumns($connection);
+    ensureModuleQuestionnairesTable($connection);
+    ensureEvaluationSubmissionScopeColumns($connection);
+    ensureFormateurModuleScoresTable($connection);
+    ensureModuleQuestionnaireMappings($connection);
 
     if (!hasRequiredTables($connection)) {
         bootstrapSchema($connection);
         ensureSystemMetaTable($connection);
         ensureRequestThrottlesTable($connection);
         ensurePlanningSubmissionSnapshotColumns($connection);
+        ensureModuleQuestionnairesTable($connection);
+        ensureEvaluationSubmissionScopeColumns($connection);
+        ensureFormateurModuleScoresTable($connection);
+        ensureModuleQuestionnaireMappings($connection);
         setSystemMeta($connection, 'app_bootstrap_version', APP_BOOTSTRAP_VERSION);
     } elseif (getSystemMeta($connection, 'app_bootstrap_version') === null) {
         setSystemMeta($connection, 'app_bootstrap_version', APP_BOOTSTRAP_VERSION);

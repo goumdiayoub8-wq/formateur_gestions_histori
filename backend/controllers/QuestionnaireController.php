@@ -20,7 +20,7 @@ class QuestionnaireController
     {
         $userId = requireRole([1, 2, 3]);
         $formateurId = $this->resolveFormateurId($userId, false);
-        $payload = $this->questionnaires->getQuestions($formateurId);
+        $payload = $this->questionnaires->getQuestions($formateurId, requestQuery('token'));
 
         jsonResponse([
             'status' => 'success',
@@ -40,7 +40,7 @@ class QuestionnaireController
             throw new ValidationException('Le tableau des reponses est obligatoire.');
         }
 
-        $score = $this->questionnaires->submitAnswers(intval($formateur['id']), $answers);
+        $score = $this->questionnaires->submitAnswers(intval($formateur['id']), $answers, requestQuery('token'));
 
         jsonResponse([
             'status' => 'success',
@@ -54,7 +54,7 @@ class QuestionnaireController
     {
         $userId = requireRole([1, 2, 3]);
         $formateurId = $this->resolveFormateurId($userId, true);
-        $score = $this->questionnaires->getScore($formateurId);
+        $score = $this->questionnaires->getScore($formateurId, requestQuery('token'));
 
         jsonResponse([
             'status' => 'success',

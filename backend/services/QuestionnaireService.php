@@ -17,6 +17,31 @@ class QuestionnaireService
         $this->formateurs = new FormateurRepository($db);
     }
 
+    private function resolveAccessibleToken(?int $formateurId, ?string $questionnaireToken): ?array
+    {
+        $normalizedToken = trim((string) $questionnaireToken);
+
+        if ($normalizedToken === '') {
+            return null;
+        }
+
+        if ($formateurId === null) {
+            throw new NotFoundException('Questionnaire introuvable.');
+        }
+
+        $access = $this->questionnaires->findAccessibleQuestionnaireToken(
+            $formateurId,
+            $normalizedToken,
+            currentAcademicYear()
+        );
+
+        if (!$access) {
+            throw new NotFoundException('Questionnaire introuvable.');
+        }
+
+        return $access;
+    }
+
     private function normalizeStoredRating($value): ?int
     {
         if ($value === null || $value === '') {
@@ -37,6 +62,68 @@ class QuestionnaireService
         }
 
         return max(1, min(5, intval(round(floatval($value)))));
+    }
+
+    private function normalizeQuestionType($value): string
+    {
+        $normalized = strtolower(trim((string) $value));
+
+        return match ($normalized) {
+            'yes/no', 'yes_no', 'boolean', 'bool' => 'yes/no',
+            'text', 'textarea', 'comment' => 'text',
+            default => 'rating',
+        };
+    }
+
+    private function isQuestionRequired(array $question): bool
+    {
+        $type = $this->normalizeQuestionType($question['type'] ?? 'rating');
+        $weight = round(floatval($question['weight'] ?? 0), 2);
+
+        return !($type === 'text' && $weight <= 0);
+    }
+
+    private function normalizeStoredAnswer(array $question, $value)
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $questionType = $this->normalizeQuestionType($question['type'] ?? 'rating');
+
+        if ($questionType === 'yes/no') {
+            try {
+                return $this->normalizeYesNoValue($value);
+            } catch (Throwable $exception) {
+                return null;
+            }
+        }
+
+        if ($questionType === 'text') {
+            $normalized = trim((string) $value);
+            return $normalized !== '' ? $normalized : null;
+        }
+
+        return $this->normalizeStoredRating($value);
+    }
+
+    private function answerNumericScore(array $question, $value): float
+    {
+        if ($value === null || $value === '') {
+            return 0.0;
+        }
+
+        $questionType = $this->normalizeQuestionType($question['type'] ?? 'rating');
+
+        if ($questionType === 'yes/no') {
+            return $this->normalizeYesNoValue($value) === 'yes' ? 5.0 : 1.0;
+        }
+
+        if ($questionType === 'text') {
+            return 0.0;
+        }
+
+        return floatval($this->normalizeStoredRating($value) ?? 0);
     }
 
     private function inferSkills(string $text): array
@@ -74,6 +161,7 @@ class QuestionnaireService
         $name = $raw;
         $description = 'Evaluation simple de ce modele pedagogique.';
         $skills = $this->inferSkills($raw);
+        $questionType = $this->normalizeQuestionType($question['type'] ?? 'rating');
 
         if (is_array($decoded) && !empty($decoded['name'])) {
             $name = trim((string) $decoded['name']);
@@ -101,20 +189,25 @@ class QuestionnaireService
             'description' => $description,
             'skills' => $skills,
             'question_text' => $name,
-            'type' => 'rating',
+            'type' => $questionType,
+            'required' => $this->isQuestionRequired($question),
             'weight' => round(floatval($question['weight'] ?? 0), 2),
-            'scale' => [
-                'min' => 1,
-                'max' => 5,
-            ],
+            'scale' => $questionType === 'rating'
+                ? [
+                    'min' => 1,
+                    'max' => 5,
+                ]
+                : null,
             'score' => $currentScore,
             'global_score' => $globalScore,
             'created_at' => $question['created_at'] ?? null,
         ];
     }
 
-    public function getQuestions(?int $formateurId = null): array
+    public function getQuestions(?int $formateurId = null, ?string $questionnaireToken = null): array
     {
+        $access = $this->resolveAccessibleToken($formateurId, $questionnaireToken);
+        $moduleId = isset($access['module_id']) ? intval($access['module_id']) : null;
         $questionnaire = $this->questionnaires->getActiveQuestionnaire();
 
         if (!$questionnaire) {
@@ -122,6 +215,11 @@ class QuestionnaireService
         }
 
         $questions = $this->questionnaires->getQuestions(intval($questionnaire['id']));
+        $questionMap = [];
+        foreach ($questions as $question) {
+            $questionMap[intval($question['id'])] = $question;
+        }
+
         $globalScores = [];
         foreach ($this->questionnaires->getGlobalScoresByQuestionnaire(intval($questionnaire['id'])) as $row) {
             $averageRating = $row['average_rating'] !== null ? round(floatval($row['average_rating']), 2) : null;
@@ -137,10 +235,18 @@ class QuestionnaireService
 
         if ($formateurId !== null) {
             $this->assertFormateurExists($formateurId);
-            $score = $this->formatScore($this->questionnaires->getScoreByFormateur($formateurId));
+            $score = $this->formatScore($this->questionnaires->getScoreByFormateur($formateurId, $moduleId));
 
-            foreach ($this->questionnaires->getAnswersByFormateur($formateurId, intval($questionnaire['id'])) as $answer) {
-                $existingAnswers[(string) intval($answer['question_id'])] = $this->normalizeStoredRating($answer['value']);
+            foreach ($this->questionnaires->getAnswersByFormateur($formateurId, intval($questionnaire['id']), $moduleId) as $answer) {
+                $questionId = intval($answer['question_id']);
+                if (!isset($questionMap[$questionId])) {
+                    continue;
+                }
+
+                $existingAnswers[(string) $questionId] = $this->normalizeStoredAnswer(
+                    $questionMap[$questionId],
+                    $answer['value'] ?? null
+                );
             }
         }
 
@@ -148,25 +254,33 @@ class QuestionnaireService
             return $this->buildModelDefinition($question, $index, $globalScores, $existingAnswers);
         }, $questions, array_keys($questions));
 
+        $resolvedToken = trim((string) ($access['questionnaire_token'] ?? $access['questionnaire_id'] ?? $questionnaireToken));
+
         return [
             'questionnaire' => [
                 'id' => intval($questionnaire['id']),
                 'title' => $questionnaire['title'],
                 'created_at' => $questionnaire['created_at'],
+                'token' => $resolvedToken !== '' ? $resolvedToken : null,
+                'module_id' => $moduleId,
+                'module_name' => $access['module_name'] ?? null,
+                'module_code' => $access['module_code'] ?? null,
             ],
             'questions' => $models,
             'models' => $models,
             'score' => $score,
-            'can_submit' => $formateurId === null ? true : !$this->questionnaires->hasSubmitted($formateurId),
+            'can_submit' => $formateurId === null ? true : !$this->questionnaires->hasSubmitted($formateurId, $moduleId),
             'existing_answers' => $existingAnswers,
         ];
     }
 
-    public function submitAnswers(int $formateurId, array $answers): array
+    public function submitAnswers(int $formateurId, array $answers, ?string $questionnaireToken = null): array
     {
         $this->assertFormateurExists($formateurId);
+        $access = $this->resolveAccessibleToken($formateurId, $questionnaireToken);
+        $moduleId = isset($access['module_id']) ? intval($access['module_id']) : null;
 
-        if ($this->questionnaires->hasSubmitted($formateurId)) {
+        if ($this->questionnaires->hasSubmitted($formateurId, $moduleId)) {
             throw new ConflictException('Ce questionnaire a deja ete soumis pour ce formateur.');
         }
 
@@ -190,10 +304,13 @@ class QuestionnaireService
                 $questionId = intval($question['id']);
                 $value = $normalizedAnswers[$questionId] ?? '';
 
-                $this->questionnaires->createAnswer($formateurId, $questionId, (string) $value);
+                $this->questionnaires->createAnswer($formateurId, $moduleId, $questionId, (string) $value);
             }
 
-            $createdScore = $this->questionnaires->createScore($formateurId, $score);
+            $createdScore = $this->questionnaires->createScore($formateurId, $moduleId, $score);
+            if ($moduleId !== null) {
+                $this->questionnaires->upsertFormateurModuleScore($formateurId, $moduleId, floatval($score['percentage'] ?? 0));
+            }
             $this->db->commit();
 
             return $this->formatScore($createdScore) ?: [
@@ -203,6 +320,7 @@ class QuestionnaireService
                 'percentage' => $score['percentage'],
                 'message' => $this->getPerformanceMessage($score['percentage']),
                 'tone' => $this->getPerformanceTone($score['percentage']),
+                'module_id' => $moduleId,
             ];
         } catch (Throwable $exception) {
             if ($this->db->inTransaction()) {
@@ -221,7 +339,7 @@ class QuestionnaireService
         foreach ($questions as $question) {
             $questionId = intval($question['id']);
             $weight = round(max(0, floatval($question['weight'] ?? 0)), 2);
-            $numericValue = floatval($answers[$questionId] ?? 0);
+            $numericValue = $this->answerNumericScore($question, $answers[$questionId] ?? null);
 
             $totalScore += $numericValue * $weight;
             $maxScore += 5 * $weight;
@@ -236,10 +354,12 @@ class QuestionnaireService
         ];
     }
 
-    public function getScore(int $formateurId): array
+    public function getScore(int $formateurId, ?string $questionnaireToken = null): array
     {
         $this->assertFormateurExists($formateurId);
-        $score = $this->formatScore($this->questionnaires->getScoreByFormateur($formateurId));
+        $access = $this->resolveAccessibleToken($formateurId, $questionnaireToken);
+        $moduleId = isset($access['module_id']) ? intval($access['module_id']) : null;
+        $score = $this->formatScore($this->questionnaires->getScoreByFormateur($formateurId, $moduleId));
 
         return $score ?: [
             'submitted' => false,
@@ -285,6 +405,10 @@ class QuestionnaireService
         }
 
         foreach ($questionMap as $questionId => $question) {
+            if (!$this->isQuestionRequired($question)) {
+                continue;
+            }
+
             $value = $normalized[$questionId] ?? null;
             $isEmpty = $value === null || trim((string) $value) === '';
 
@@ -300,6 +424,17 @@ class QuestionnaireService
     {
         if ($value === null || $value === '') {
             return null;
+        }
+
+        $questionType = $this->normalizeQuestionType($question['type'] ?? 'rating');
+
+        if ($questionType === 'yes/no') {
+            return $this->normalizeYesNoValue($value);
+        }
+
+        if ($questionType === 'text') {
+            $normalized = trim((string) $value);
+            return $normalized !== '' ? $normalized : null;
         }
 
         $normalizedStored = $this->normalizeStoredRating($value);
@@ -337,6 +472,7 @@ class QuestionnaireService
             'id' => intval($score['id']),
             'submitted' => true,
             'formateur_id' => intval($score['formateur_id']),
+            'module_id' => isset($score['module_id']) ? intval($score['module_id']) : null,
             'total_score' => round(floatval($score['total_score'] ?? 0), 2),
             'max_score' => round(floatval($score['max_score'] ?? 0), 2),
             'percentage' => $percentage,
@@ -353,10 +489,10 @@ class QuestionnaireService
         }
 
         if ($percentage >= 50) {
-            return 'Good';
+            return 'Bon';
         }
 
-        return 'Needs improvement';
+        return 'A ameliorer';
     }
 
     private function getPerformanceTone(float $percentage): string

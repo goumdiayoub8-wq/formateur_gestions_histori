@@ -158,6 +158,19 @@ class FormateurController
         ]);
     }
 
+    public function getModulesQuestionnaires(): void
+    {
+        $userId = requireRole([3]);
+        $formateur = $this->formateurs->findByUserId($userId);
+        $rows = $this->formateurs->moduleQuestionnaires(intval($formateur['id']), currentAcademicYear());
+
+        jsonResponse([
+            'status' => 'success',
+            'data' => $rows,
+            'modules_questionnaires' => $rows,
+        ]);
+    }
+
     public function createDemande(): void
     {
         $userId = requireRole([3]);

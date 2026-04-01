@@ -39,4 +39,39 @@ if ($method === 'POST' && $action === 'generate-validation-status') {
     return;
 }
 
+if ($method === 'POST' && $action === 'generate-trainer-performance') {
+    $controller->generateTrainerPerformance();
+    return;
+}
+
+if ($method === 'POST' && $action === 'generate-teaching-hours') {
+    $controller->generateTeachingHours();
+    return;
+}
+
+if ($method === 'POST' && $action === 'generate-questionnaire-results') {
+    $controller->generateQuestionnaireResults();
+    return;
+}
+
+if ($method === 'POST' && $action === 'generate-global-platform-summary') {
+    $controller->generateGlobalPlatformSummary();
+    return;
+}
+
+if ($method === 'POST' && $action === 'generate-hours-by-department') {
+    $controller->generateHoursByDepartment();
+    return;
+}
+
+if ($method === 'POST' && $action === 'generate-top-trainers') {
+    $controller->generateTopTrainers();
+    return;
+}
+
+if ($method === 'POST' && $action === 'generate-module-success-rates') {
+    $controller->generateModuleSuccessRates();
+    return;
+}
+
 throw new NotFoundException('Route reports non trouvee.');

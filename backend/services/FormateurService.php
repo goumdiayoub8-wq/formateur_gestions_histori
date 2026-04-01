@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/../repositories/FormateurRepository.php';
+require_once __DIR__ . '/../repositories/QuestionnaireRepository.php';
 require_once __DIR__ . '/../repositories/UserRepository.php';
 require_once __DIR__ . '/../core/HttpException.php';
 
@@ -8,12 +9,14 @@ class FormateurService
 {
     private PDO $db;
     private FormateurRepository $formateurs;
+    private QuestionnaireRepository $questionnaires;
     private UserRepository $users;
 
     public function __construct(PDO $db)
     {
         $this->db = $db;
         $this->formateurs = new FormateurRepository($db);
+        $this->questionnaires = new QuestionnaireRepository($db);
         $this->users = new UserRepository($db);
     }
 
@@ -156,5 +159,43 @@ class FormateurService
         }
 
         return $this->find(intval($user['formateur_id']));
+    }
+
+    public function moduleQuestionnaires(int $formateurId, int $academicYear): array
+    {
+        $this->find($formateurId);
+
+        $rows = $this->questionnaires->getFormateurModuleQuestionnaireRows($formateurId, $academicYear);
+        $rankings = $this->questionnaires->getModuleScoreRankings(array_map(
+            static fn(array $row): int => intval($row['module_id'] ?? 0),
+            $rows
+        ));
+
+        $rankingMap = [];
+        $rankingTotals = [];
+
+        foreach ($rankings as $rankingRow) {
+            $moduleId = intval($rankingRow['module_id'] ?? 0);
+            $currentRank = ($rankingTotals[$moduleId] ?? 0) + 1;
+            $rankingTotals[$moduleId] = $currentRank;
+            $rankingMap[$moduleId][intval($rankingRow['formateur_id'] ?? 0)] = $currentRank;
+        }
+
+        return array_map(function (array $row) use ($formateurId, $rankingMap, $rankingTotals): array {
+            $moduleId = intval($row['module_id'] ?? 0);
+            $score = $row['score'] !== null ? round(floatval($row['score']), 2) : null;
+
+            return [
+                'module_id' => $moduleId,
+                'module_name' => $row['module_name'] ?? '',
+                'questionnaire_token' => trim((string) ($row['questionnaire_token'] ?? '')) !== ''
+                    ? trim((string) $row['questionnaire_token'])
+                    : null,
+                'status' => $score !== null ? 'completed' : 'not_started',
+                'score' => $score,
+                'rank_in_module' => $score !== null ? ($rankingMap[$moduleId][$formateurId] ?? null) : null,
+                'total_formateurs' => intval($rankingTotals[$moduleId] ?? 0),
+            ];
+        }, $rows);
     }
 }

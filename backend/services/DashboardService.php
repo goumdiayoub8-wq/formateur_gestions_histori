@@ -3,18 +3,45 @@
 require_once __DIR__ . '/../repositories/DashboardRepository.php';
 require_once __DIR__ . '/../repositories/FormateurRepository.php';
 require_once __DIR__ . '/../services/PlanningService.php';
+require_once __DIR__ . '/../services/FormateurService.php';
+require_once __DIR__ . '/../core/HttpException.php';
 
 class DashboardService
 {
     private DashboardRepository $dashboard;
     private FormateurRepository $formateurs;
     private PlanningService $planning;
+    private FormateurService $formateurService;
 
     public function __construct(PDO $db)
     {
         $this->dashboard = new DashboardRepository($db);
         $this->formateurs = new FormateurRepository($db);
         $this->planning = new PlanningService($db);
+        $this->formateurService = new FormateurService($db);
+    }
+
+    private function enrichModulesWithQuestionnaires(array $modules, int $formateurId, int $annee): array
+    {
+        $questionnaireRows = $this->formateurService->moduleQuestionnaires($formateurId, $annee);
+        $questionnaireMap = [];
+
+        foreach ($questionnaireRows as $row) {
+            $questionnaireMap[intval($row['module_id'] ?? 0)] = $row;
+        }
+
+        return array_map(static function (array $module) use ($questionnaireMap): array {
+            $moduleId = intval($module['id'] ?? 0);
+            $questionnaire = $questionnaireMap[$moduleId] ?? null;
+
+            return array_merge($module, [
+                'questionnaire_status' => $questionnaire['status'] ?? 'not_started',
+                'questionnaire_score' => $questionnaire['score'] ?? null,
+                'questionnaire_token' => $questionnaire['questionnaire_token'] ?? null,
+                'rank_in_module' => $questionnaire['rank_in_module'] ?? null,
+                'total_formateurs' => intval($questionnaire['total_formateurs'] ?? 0),
+            ]);
+        }, $modules);
     }
 
     public function stats(): array
@@ -22,6 +49,14 @@ class DashboardService
         $overview = $this->dashboard->getOverview();
         $trainerRows = $this->dashboard->getTrainerRows();
         $weeklyOverloads = $this->dashboard->getWeeklyOverloads();
+        $modulePerformance = $this->dashboard->getModulePerformanceRows(currentAcademicYear(), 8);
+        $moduleCompletion = $this->dashboard->getModuleCompletionRows(6, 'DESC');
+        $teachingLoad = $this->dashboard->getTeachingLoadTimeline(8, 6);
+        $questionnaireAnalytics = $this->dashboard->getQuestionnaireAnalytics(currentAcademicYear());
+        $questionnaireHighlights = [
+            'top' => $this->dashboard->getQuestionnaireModuleInsights(4, 'DESC'),
+            'bottom' => $this->dashboard->getQuestionnaireModuleInsights(4, 'ASC'),
+        ];
 
         $alerts = [];
         $trainerStats = [];
@@ -118,6 +153,21 @@ class DashboardService
                 'imbalance' => round(abs($globalS1 - $globalS2), 2),
             ],
             'formateurs' => $trainerStats,
+            'module_performance' => $modulePerformance,
+            'module_completion' => $moduleCompletion,
+            'teaching_load' => $teachingLoad,
+            'questionnaire_analytics' => [
+                'assigned_questionnaires' => $questionnaireAnalytics['assigned_questionnaires'] ?? 0,
+                'completed_questionnaires' => $questionnaireAnalytics['completed_questionnaires'] ?? 0,
+                'average_percentage' => $questionnaireAnalytics['average_percentage'] ?? null,
+                'completion_rate' => intval(round(
+                    ($questionnaireAnalytics['assigned_questionnaires'] ?? 0) > 0
+                        ? (($questionnaireAnalytics['completed_questionnaires'] ?? 0) / $questionnaireAnalytics['assigned_questionnaires']) * 100
+                        : 0
+                )),
+                'top_modules' => $questionnaireHighlights['top'],
+                'bottom_modules' => $questionnaireHighlights['bottom'],
+            ],
             'alerts' => $alerts,
         ];
     }
@@ -129,10 +179,18 @@ class DashboardService
         $filiereProgress = $this->dashboard->getFiliereProgress();
         $recentActivities = $this->dashboard->getRecentActivities();
         $stats = $this->stats();
+        $hoursByFiliere = $this->dashboard->getHoursByFiliere();
+        $bestModules = $this->dashboard->getModuleCompletionRows(3, 'DESC');
+        $worstModules = $this->dashboard->getModuleCompletionRows(3, 'ASC');
 
         $totalSubmissions = max(1, intval($kpis['total_submissions'] ?? 0));
         $approvedCount = intval($validationStatus['validated'] ?? 0);
         $validationRate = round(($approvedCount / $totalSubmissions) * 100);
+        $totalModuleHours = round(floatval($stats['overview']['total_module_hours'] ?? 0), 2);
+        $completedHours = round(floatval($stats['overview']['total_completed_hours'] ?? 0), 2);
+        $validatedPlannedHours = round(floatval($stats['overview']['total_validated_planned_hours'] ?? 0), 2);
+        $questionnaireAnalytics = $stats['questionnaire_analytics'] ?? [];
+        $trainerRanking = $this->buildTrainerRanking($stats['formateurs'] ?? []);
 
         return [
             'hero' => [
@@ -151,10 +209,71 @@ class DashboardService
                 'pending' => intval($validationStatus['pending'] ?? 0),
                 'revision' => intval($validationStatus['revision'] ?? 0),
             ],
+            'global_performance' => [
+                'completion_rate' => $totalModuleHours > 0
+                    ? intval(round(min(100, ($completedHours / $totalModuleHours) * 100)))
+                    : 0,
+                'planned_coverage_rate' => $totalModuleHours > 0
+                    ? intval(round(min(100, ($validatedPlannedHours / $totalModuleHours) * 100)))
+                    : 0,
+                'questionnaire_completion_rate' => intval($questionnaireAnalytics['completion_rate'] ?? 0),
+                'questionnaire_average' => $questionnaireAnalytics['average_percentage'] !== null
+                    ? round(floatval($questionnaireAnalytics['average_percentage']), 2)
+                    : null,
+            ],
             'filiere_progress' => $filiereProgress,
+            'hours_by_filiere' => $hoursByFiliere,
+            'module_highlights' => [
+                'best' => $bestModules,
+                'worst' => $worstModules,
+            ],
+            'trainer_ranking' => $trainerRanking,
+            'questionnaire_analytics' => $questionnaireAnalytics,
             'recent_activities' => $recentActivities,
             'alerts' => $stats['alerts'],
         ];
+    }
+
+    private function buildTrainerRanking(array $trainerRows): array
+    {
+        $ranking = array_map(static function (array $row): array {
+            $completedHours = round(floatval($row['completed_hours'] ?? 0), 2);
+            $plannedHours = round(floatval($row['planned_hours'] ?? 0), 2);
+            $annualHours = round(floatval($row['annual_hours'] ?? 0), 2);
+            $questionnairePercentage = $row['questionnaire_percentage'] !== null
+                ? round(floatval($row['questionnaire_percentage']), 2)
+                : null;
+            $loadReference = $plannedHours > 0 ? $plannedHours : $annualHours;
+            $deliveryRate = $loadReference > 0 ? min(100, ($completedHours / $loadReference) * 100) : 0;
+            $blendedScore = round(($deliveryRate * 0.45) + (($questionnairePercentage ?? 0) * 0.55), 1);
+
+            return [
+                'id' => intval($row['id'] ?? 0),
+                'nom' => $row['nom'] ?? 'Formateur',
+                'specialite' => $row['specialite'] ?? '',
+                'completed_hours' => $completedHours,
+                'planned_hours' => $plannedHours,
+                'questionnaire_percentage' => $questionnairePercentage,
+                'score' => $blendedScore,
+            ];
+        }, $trainerRows);
+
+        usort($ranking, static function (array $left, array $right): int {
+            if ($right['score'] !== $left['score']) {
+                return $right['score'] <=> $left['score'];
+            }
+
+            if (($right['questionnaire_percentage'] ?? -1) !== ($left['questionnaire_percentage'] ?? -1)) {
+                return ($right['questionnaire_percentage'] ?? -1) <=> ($left['questionnaire_percentage'] ?? -1);
+            }
+
+            return $right['completed_hours'] <=> $left['completed_hours'];
+        });
+
+        return array_slice(array_map(static function (array $row, int $index): array {
+            $row['rank'] = $index + 1;
+            return $row;
+        }, $ranking, array_keys($ranking)), 0, 5);
     }
 
     public function trainerOverview(int $formateurId, int $week, int $annee): array
@@ -164,7 +283,11 @@ class DashboardService
             throw new NotFoundException('Formateur introuvable.');
         }
 
-        $modules = $this->dashboard->getTrainerAssignedModules($formateurId, $annee, $week);
+        $modules = $this->enrichModulesWithQuestionnaires(
+            $this->dashboard->getTrainerAssignedModules($formateurId, $annee, $week),
+            $formateurId,
+            $annee
+        );
         $groups = $this->dashboard->getTrainerGroups($formateurId, $annee);
         $questionnaireScore = $this->dashboard->getTrainerQuestionnaireScore($formateurId);
         $requestsSummary = $this->dashboard->getTrainerChangeRequestSummary($formateurId, $annee);
@@ -318,7 +441,7 @@ class DashboardService
             $weekLabel = 'A definir';
         }
 
-        $created = $this->dashboard->createTrainerChangeRequest([
+        $requestPayload = [
             'formateur_id' => $formateurId,
             'module_id' => intval($payload['module_id']),
             'groupe_code' => $groupeCode,
@@ -326,7 +449,14 @@ class DashboardService
             'request_week' => $weekNumber,
             'academic_year' => $annee,
             'reason' => trim((string) ($payload['reason'] ?? '')),
-        ]);
+        ];
+
+        $existing = $this->dashboard->findDuplicatePendingTrainerChangeRequest($requestPayload);
+        if ($existing) {
+            throw new ConflictException('Une demande identique est deja en attente de traitement.');
+        }
+
+        $created = $this->dashboard->createTrainerChangeRequest($requestPayload);
 
         if (!$created) {
             throw new RuntimeException('Impossible de creer la demande de modification.');

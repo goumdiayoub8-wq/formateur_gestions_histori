@@ -43,11 +43,11 @@ final class ReportExportTest extends TestCase
         self::assertSame('application/vnd.ms-excel', $download['content_type']);
         self::assertStringContainsString('<?xml version="1.0" encoding="UTF-8"?>', $contents);
         self::assertStringContainsString('<?mso-application progid="Excel.Sheet"?>', $contents);
-        self::assertStringContainsString('Trainer Summary', $contents);
-        self::assertStringContainsString('Planning Repartition', $contents);
-        self::assertStringContainsString('Totals', $contents);
+        self::assertStringContainsString('Synthese executive', $contents);
+        self::assertStringContainsString('Charge detaillee par formateur', $contents);
         self::assertStringContainsString('Heures planifiees', $contents);
         self::assertStringContainsString('Formateur', $contents);
+        self::assertStringContainsString('ss:Formula', $contents);
     }
 
     public function testPdfExportCreatesDownloadablePdfWithoutServerError(): void
@@ -101,8 +101,21 @@ final class ReportExportTest extends TestCase
 
         self::assertNotFalse($contents);
         self::assertStringContainsString('No Planning ' . $suffix, $contents);
-        self::assertStringContainsString('Aucun planning', $contents);
         self::assertStringContainsString('0h', $contents);
+    }
+
+    public function testNewQuestionnaireReportCreatesStructuredExcelExport(): void
+    {
+        $report = $this->reports->generateQuestionnaireResults('xlsx', $this->existingUserId());
+        $download = $this->reports->downloadable(intval($report['id']));
+        $this->generatedFiles[] = $download['absolute_path'];
+        $contents = file_get_contents($download['absolute_path']);
+
+        self::assertNotFalse($contents);
+        self::assertStringContainsString('Resultats des questionnaires', $contents);
+        self::assertStringContainsString('Scores moyens des questionnaires', $contents);
+        self::assertStringContainsString('Score moyen', $contents);
+        self::assertStringContainsString('Reponses', $contents);
     }
 
     private function existingUserId(): int

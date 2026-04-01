@@ -14,6 +14,26 @@ class PlanningRepository
         $this->db = $db;
     }
 
+    private function normalizeSessionStatusForStorage(?string $status): string
+    {
+        $normalizedStatus = strtolower(trim((string) ($status ?? 'scheduled')));
+
+        return match ($normalizedStatus) {
+            'completed' => 'done',
+            default => $normalizedStatus !== '' ? $normalizedStatus : 'scheduled',
+        };
+    }
+
+    private function normalizeSessionStatusForOutput(?string $status): string
+    {
+        $normalizedStatus = strtolower(trim((string) ($status ?? 'scheduled')));
+
+        return match ($normalizedStatus) {
+            'done' => 'completed',
+            default => $normalizedStatus !== '' ? $normalizedStatus : 'scheduled',
+        };
+    }
+
     private function normalizeRow(array $row): array
     {
         $row['id'] = intval($row['id'] ?? 0);
@@ -1047,7 +1067,7 @@ class PlanningRepository
             'end_time' => $endTime,
             'duration_minutes' => $durationMinutes,
             'duration_hours' => round($durationMinutes / 60, 2),
-            'status' => $row['status'] ?? 'scheduled',
+            'status' => $this->normalizeSessionStatusForOutput($row['status'] ?? 'scheduled'),
             'task_title' => $row['task_title'] ?? '',
             'task_description' => $row['task_description'] ?? '',
             'session_date' => $row['session_date'] ?? null,
@@ -1317,7 +1337,7 @@ class PlanningRepository
             'start_time' => $data['start_time'],
             'end_time' => $data['end_time'],
             'session_date' => $data['session_date'],
-            'status' => $data['status'] ?? 'scheduled',
+            'status' => $this->normalizeSessionStatusForStorage($data['status'] ?? 'scheduled'),
             'task_title' => $data['task_title'],
             'task_description' => $data['task_description'],
         ]);
@@ -1373,7 +1393,7 @@ class PlanningRepository
         );
         $stmt->execute([
             'id' => $id,
-            'status' => $status,
+            'status' => $this->normalizeSessionStatusForStorage($status),
         ]);
     }
 

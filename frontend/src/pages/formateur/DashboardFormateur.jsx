@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Bell, BookOpen, CalendarDays, ClipboardCheck, Clock3, Users } from 'lucide-react';
+import { Bell, BookOpen, CalendarDays, Clock3, Users } from 'lucide-react';
 import DashboardService from '../../services/dashboardService';
 import PlanningService from '../../services/planningService';
 import FormateurService from '../../services/formateurService';
@@ -98,53 +98,8 @@ function PlanningDayChip({ day }) {
   );
 }
 
-function getEvaluationMeta(percentage) {
-  const value = Number(percentage);
-
-  if (!Number.isFinite(value)) {
-    return {
-      value: 'Non evalue',
-      helper: 'Completez votre questionnaire d evaluation',
-      progress: 0,
-      progressClassName: 'bg-[#9aa9bd]',
-      badgeClassName: 'bg-[#eef3f9] text-[#60748f]',
-      message: 'Questionnaire en attente',
-    };
-  }
-
-  if (value >= 75) {
-    return {
-      value: `${Math.round(value)}%`,
-      helper: 'Excellent',
-      progress: value,
-      progressClassName: 'bg-[#16c55b]',
-      badgeClassName: 'bg-[#eafaf0] text-[#119548]',
-      message: 'Performance solide et reguliere',
-    };
-  }
-
-  if (value >= 50) {
-    return {
-      value: `${Math.round(value)}%`,
-      helper: 'Good',
-      progress: value,
-      progressClassName: 'bg-[#ff9b1f]',
-      badgeClassName: 'bg-[#fff4e4] text-[#d97a00]',
-      message: 'Bon niveau avec marge d amelioration',
-    };
-  }
-
-  return {
-    value: `${Math.round(value)}%`,
-    helper: 'Needs improvement',
-    progress: value,
-    progressClassName: 'bg-[#ef4444]',
-    badgeClassName: 'bg-[#fff1f1] text-[#cf4c4c]',
-    message: 'Un accompagnement complementaire est recommande',
-  };
-}
-
 export default function DashboardFormateur() {
+  const academicConfigEnabled = false;
   const [overview, setOverview] = useState(null);
   const [profile, setProfile] = useState(null);
   const [weeklyStats, setWeeklyStats] = useState(null);
@@ -163,7 +118,7 @@ export default function DashboardFormateur() {
     inStagePeriod,
     inExamPeriod,
     validation,
-  } = useAcademicConfig();
+  } = useAcademicConfig({ enabled: academicConfigEnabled });
 
   useEffect(() => {
     let mounted = true;
@@ -256,10 +211,12 @@ export default function DashboardFormateur() {
     weekly_limit: weeklyStats?.weekly_limit ?? overview?.stats?.weekly_limit_hours ?? 44,
     notifications: notificationSummary?.total ?? 0,
   };
-  const evaluation = overview?.evaluation || null;
-  const evaluationMeta = getEvaluationMeta(evaluation?.percentage);
   const planning = overview?.planning || null;
   const planningAlerts = Array.isArray(overview?.alerts) ? overview.alerts : [];
+  const fallbackAcademicYear = Number(overview?.stats?.academic_year || weeklyStats?.academic_year || 0);
+  const displayAcademicYearLabel =
+    academicYearLabel || (fallbackAcademicYear > 0 ? `${fallbackAcademicYear - 1}-${fallbackAcademicYear}` : '');
+  const displayCurrentWeek = currentWeek ?? overview?.stats?.week ?? weeklyStats?.week ?? null;
 
   const handleExportPlanning = async () => {
     try {
@@ -274,7 +231,7 @@ export default function DashboardFormateur() {
         },
         weekNumber: overview?.stats?.week ?? currentWeek,
         weekRange: planning?.week_range?.label || '',
-        academicYearLabel,
+        academicYearLabel: displayAcademicYearLabel,
       });
       setPlanningExportFeedback({
         tone: 'success',
@@ -298,21 +255,21 @@ export default function DashboardFormateur() {
           Voici votre planning et vos modules de formation
         </p>
         <div className="mt-5 flex flex-wrap items-center gap-3 text-sm">
-          <span className="rounded-full bg-white/14 px-3 py-1.5 font-semibold">{academicYearLabel || 'Annee non definie'}</span>
-          <span className="rounded-full bg-white/14 px-3 py-1.5 font-semibold">Semaine {currentWeek ?? '-'}</span>
+          <span className="rounded-full bg-white/14 px-3 py-1.5 font-semibold">{displayAcademicYearLabel || 'Annee non definie'}</span>
+          <span className="rounded-full bg-white/14 px-3 py-1.5 font-semibold">Semaine {displayCurrentWeek ?? '-'}</span>
           <span className="rounded-full bg-white/14 px-3 py-1.5 font-semibold">{currentSemester || '-'}</span>
           {inStagePeriod ? <span className="rounded-full bg-[#20c05c] px-3 py-1.5 font-semibold text-white">Stage</span> : null}
           {inExamPeriod ? <span className="rounded-full bg-[#ff9b1f] px-3 py-1.5 font-semibold text-white">Exam</span> : null}
         </div>
       </div>
 
-      {!academicLoading && !config ? (
+      {academicConfigEnabled && !academicLoading && !config ? (
         <FormateurPanel className="border-[#ffe3ad] bg-[#fff8e9] px-6 py-5 text-[15px] font-medium text-[#9a6500]">
           Configurez l&apos;annee scolaire pour activer les calculs de semaine et de semestre.
         </FormateurPanel>
       ) : null}
 
-      {!academicLoading && config && !validation.isValid ? (
+      {academicConfigEnabled && !academicLoading && config && !validation.isValid ? (
         <FormateurPanel className="border-[#ffd9d9] bg-[#fff5f5] px-6 py-5 text-[15px] font-medium text-[#d14343]">
           La configuration academique est invalide. Les calculs de semaine et de semestre sont bloques tant qu&apos;elle n&apos;est pas corrigee.
         </FormateurPanel>
@@ -350,15 +307,6 @@ export default function DashboardFormateur() {
           iconClassName="bg-[#fff4e9] text-[#ff6f1f]"
           label="Notifications"
           value={stats.notifications}
-        />
-        <FormateurStatCard
-          icon={ClipboardCheck}
-          iconClassName="bg-[#eef3ff] text-[#315cf0]"
-          label="Mon Score"
-          value={evaluationMeta.value}
-          helper={evaluationMeta.helper}
-          progress={evaluationMeta.progress}
-          progressClassName={evaluationMeta.progressClassName}
         />
       </div>
 
@@ -477,46 +425,6 @@ export default function DashboardFormateur() {
           </div>
         </FormateurPanel>
       ) : null}
-
-      <FormateurPanel className="p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h2 className="text-[19px] font-bold tracking-tight text-[#1f2a3d]">
-              Evaluation Questionnaire
-            </h2>
-            <p className="mt-2 text-[15px] text-[#7a8aa1]">
-              {evaluation?.submitted
-                ? `Votre score actuel est de ${Math.round(Number(evaluation?.percentage || 0))}% avec un calcul automatique base sur les reponses ponderees.`
-                : 'Le questionnaire d evaluation n a pas encore ete soumis. Remplissez-le pour generer votre score.'}
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <span className={`rounded-full px-3 py-1.5 text-sm font-semibold ${evaluationMeta.badgeClassName}`}>
-              {evaluationMeta.helper}
-            </span>
-            <Link
-              to="/formateur/questionnaire"
-              className="inline-flex items-center rounded-[16px] bg-[linear-gradient(90deg,_#2155f5_0%,_#33b7ff_100%)] px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(33,85,245,0.24)]"
-            >
-              Ouvrir le questionnaire
-            </Link>
-          </div>
-        </div>
-
-        <div className="mt-6 h-4 overflow-hidden rounded-full bg-[#edf1f7]">
-          <div
-            className={`h-full rounded-full ${evaluationMeta.progressClassName}`}
-            style={{ width: `${Math.max(0, Math.min(100, evaluationMeta.progress))}%` }}
-          />
-        </div>
-
-        <div className="mt-3 flex items-center justify-between text-[13px] text-[#8c9bb0]">
-          <span>0%</span>
-          <span>{evaluationMeta.message}</span>
-          <span>100%</span>
-        </div>
-      </FormateurPanel>
 
       <div className="grid gap-6 xl:grid-cols-2">
         <FormateurPanel className="p-6">

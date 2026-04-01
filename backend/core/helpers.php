@@ -322,6 +322,41 @@ function validatedPlanningSessionExistsCondition(
     );
 }
 
+function latestEvaluationScoreFieldExpression(string $formateurExpression, string $field = 'percentage'): string
+{
+    $allowedFields = ['id', 'formateur_id', 'total_score', 'max_score', 'percentage', 'created_at'];
+    $normalizedField = in_array($field, $allowedFields, true) ? $field : 'percentage';
+
+    return sprintf(
+        '(SELECT es.%1$s
+          FROM evaluation_scores es
+          WHERE es.formateur_id = %2$s
+          ORDER BY es.created_at DESC, es.id DESC
+          LIMIT 1)',
+        $normalizedField,
+        $formateurExpression
+    );
+}
+
+function averageModuleQuestionnaireScoreExpression(string $formateurExpression): string
+{
+    return sprintf(
+        '(SELECT AVG(fms.score)
+          FROM formateur_module_scores fms
+          WHERE fms.formateur_id = %s)',
+        $formateurExpression
+    );
+}
+
+function resolvedTrainerQuestionnairePercentageExpression(string $formateurExpression): string
+{
+    return sprintf(
+        'COALESCE(%s, %s)',
+        averageModuleQuestionnaireScoreExpression($formateurExpression),
+        latestEvaluationScoreFieldExpression($formateurExpression, 'percentage')
+    );
+}
+
 function currentUserId(): ?int
 {
     ensureSessionStarted();

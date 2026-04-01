@@ -80,6 +80,104 @@ class ReportController
         ], 201);
     }
 
+    public function generateTrainerPerformance(): void
+    {
+        $payload = readJsonBody();
+        $format = InputValidator::oneOf($payload, 'format', 'format', ['pdf', 'xlsx']);
+        $report = $this->reports->generateTrainerPerformance($format, currentUserId() ?? requireAuthentication());
+
+        jsonResponse([
+            'status' => 'success',
+            'message' => 'Rapport performance formateur genere.',
+            'data' => $report,
+            'report' => $report,
+        ], 201);
+    }
+
+    public function generateTeachingHours(): void
+    {
+        $payload = readJsonBody();
+        $format = InputValidator::oneOf($payload, 'format', 'format', ['pdf', 'xlsx']);
+        $report = $this->reports->generateTeachingHours($format, currentUserId() ?? requireAuthentication());
+
+        jsonResponse([
+            'status' => 'success',
+            'message' => 'Rapport charge d enseignement genere.',
+            'data' => $report,
+            'report' => $report,
+        ], 201);
+    }
+
+    public function generateQuestionnaireResults(): void
+    {
+        $payload = readJsonBody();
+        $format = InputValidator::oneOf($payload, 'format', 'format', ['pdf', 'xlsx']);
+        $report = $this->reports->generateQuestionnaireResults($format, currentUserId() ?? requireAuthentication());
+
+        jsonResponse([
+            'status' => 'success',
+            'message' => 'Rapport questionnaires genere.',
+            'data' => $report,
+            'report' => $report,
+        ], 201);
+    }
+
+    public function generateGlobalPlatformSummary(): void
+    {
+        $payload = readJsonBody();
+        $format = InputValidator::oneOf($payload, 'format', 'format', ['pdf', 'xlsx']);
+        $report = $this->reports->generateGlobalPlatformSummary($format, currentUserId() ?? requireAuthentication());
+
+        jsonResponse([
+            'status' => 'success',
+            'message' => 'Rapport synthese globale genere.',
+            'data' => $report,
+            'report' => $report,
+        ], 201);
+    }
+
+    public function generateHoursByDepartment(): void
+    {
+        $payload = readJsonBody();
+        $format = InputValidator::oneOf($payload, 'format', 'format', ['pdf', 'xlsx']);
+        $report = $this->reports->generateHoursByDepartment($format, currentUserId() ?? requireAuthentication());
+
+        jsonResponse([
+            'status' => 'success',
+            'message' => 'Rapport heures par filiere genere.',
+            'data' => $report,
+            'report' => $report,
+        ], 201);
+    }
+
+    public function generateTopTrainers(): void
+    {
+        $payload = readJsonBody();
+        $format = InputValidator::oneOf($payload, 'format', 'format', ['pdf', 'xlsx']);
+        $report = $this->reports->generateTopTrainers($format, currentUserId() ?? requireAuthentication());
+
+        jsonResponse([
+            'status' => 'success',
+            'message' => 'Rapport top formateurs genere.',
+            'data' => $report,
+            'report' => $report,
+        ], 201);
+    }
+
+    public function generateModuleSuccessRates(): void
+    {
+        $payload = readJsonBody();
+        $format = InputValidator::oneOf($payload, 'format', 'format', ['pdf', 'xlsx']);
+        $report = $this->reports->generateModuleSuccessRates($format, currentUserId() ?? requireAuthentication());
+
+        jsonResponse([
+            'status' => 'success',
+            'message' => 'Rapport taux de reussite modules genere.',
+            'data' => $report,
+            'report' => $report,
+        ], 201);
+    }
+
     public function download(): void
     {
         $reportId = InputValidator::integer(['id' => requestQuery('id')], 'id', 'rapport', true, 1);

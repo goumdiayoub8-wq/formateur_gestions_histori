@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Download, FileSpreadsheet, FileText } from 'lucide-react';
+import { Download, FileText } from 'lucide-react';
 import ReportService from '../../services/reportService';
 import FormateurService from '../../services/formateurService';
 import ModuleService from '../../services/moduleService';
@@ -103,7 +103,13 @@ export default function RapportsChef() {
   const [generatingKey, setGeneratingKey] = useState('');
   const [error, setError] = useState('');
 
-  const visibleReportTypes = ['workload', 'assignment_coverage'];
+  const visibleReportTypes = [
+    'workload',
+    'assignment_coverage',
+    'trainer_performance',
+    'teaching_load',
+    'questionnaire_results',
+  ];
 
   const loadData = async () => {
     try {
@@ -150,10 +156,28 @@ export default function RapportsChef() {
     try {
       setGeneratingKey(`${type}-${format}`);
       setError('');
-      const report =
-        type === 'workload'
-          ? await ReportService.generateWorkload(format)
-          : await ReportService.generateAssignmentCoverage(format);
+      let report;
+
+      switch (type) {
+        case 'workload':
+          report = await ReportService.generateWorkload(format);
+          break;
+        case 'assignment-coverage':
+          report = await ReportService.generateAssignmentCoverage(format);
+          break;
+        case 'trainer-performance':
+          report = await ReportService.generateTrainerPerformance(format);
+          break;
+        case 'teaching-hours':
+          report = await ReportService.generateTeachingHours(format);
+          break;
+        case 'questionnaire-results':
+          report = await ReportService.generateQuestionnaireResults(format);
+          break;
+        default:
+          throw new Error('Type de rapport non pris en charge.');
+      }
+
       await downloadBlobReport(report);
       await loadData();
     } catch (generateError) {
@@ -254,6 +278,72 @@ export default function RapportsChef() {
                 buttonLabel: 'Telecharger Excel',
                 loading: generatingKey === 'assignment-coverage-xlsx',
                 onClick: () => handleGenerate('assignment-coverage', 'xlsx'),
+              },
+            ]}
+          />
+          <ExportCard
+            icon={FileText}
+            iconClassName="bg-[linear-gradient(180deg,_#20b26b_0%,_#0f8b50_100%)]"
+            title="Performance par module"
+            description="Analyse croisee des formateurs, modules, progression et evaluation questionnaire"
+            actions={[
+              {
+                key: 'trainer-performance-pdf',
+                buttonClassName: 'bg-[#159b5e] hover:bg-[#0f7c4b]',
+                buttonLabel: 'Telecharger PDF',
+                loading: generatingKey === 'trainer-performance-pdf',
+                onClick: () => handleGenerate('trainer-performance', 'pdf'),
+              },
+              {
+                key: 'trainer-performance-xlsx',
+                buttonClassName: 'bg-[#0b7ec7] hover:bg-[#0868a6]',
+                buttonLabel: 'Telecharger Excel',
+                loading: generatingKey === 'trainer-performance-xlsx',
+                onClick: () => handleGenerate('trainer-performance', 'xlsx'),
+              },
+            ]}
+          />
+          <ExportCard
+            icon={FileText}
+            iconClassName="bg-[linear-gradient(180deg,_#8b5cf6_0%,_#6d28d9_100%)]"
+            title="Heures semaine / mois"
+            description="Suivi de la charge d enseignement hebdomadaire et mensuelle du pole"
+            actions={[
+              {
+                key: 'teaching-hours-pdf',
+                buttonClassName: 'bg-[#7c3aed] hover:bg-[#6928c7]',
+                buttonLabel: 'Telecharger PDF',
+                loading: generatingKey === 'teaching-hours-pdf',
+                onClick: () => handleGenerate('teaching-hours', 'pdf'),
+              },
+              {
+                key: 'teaching-hours-xlsx',
+                buttonClassName: 'bg-[#db2777] hover:bg-[#b91c64]',
+                buttonLabel: 'Telecharger Excel',
+                loading: generatingKey === 'teaching-hours-xlsx',
+                onClick: () => handleGenerate('teaching-hours', 'xlsx'),
+              },
+            ]}
+          />
+          <ExportCard
+            icon={FileText}
+            iconClassName="bg-[linear-gradient(180deg,_#2563eb_0%,_#1d4ed8_100%)]"
+            title="Resultats questionnaires"
+            description="Moyennes des questionnaires par module avec taux de reponse et progression"
+            actions={[
+              {
+                key: 'questionnaire-results-pdf',
+                buttonClassName: 'bg-[#1f57ff] hover:bg-[#1747d1]',
+                buttonLabel: 'Telecharger PDF',
+                loading: generatingKey === 'questionnaire-results-pdf',
+                onClick: () => handleGenerate('questionnaire-results', 'pdf'),
+              },
+              {
+                key: 'questionnaire-results-xlsx',
+                buttonClassName: 'bg-[#f59e0b] hover:bg-[#d88907]',
+                buttonLabel: 'Telecharger Excel',
+                loading: generatingKey === 'questionnaire-results-xlsx',
+                onClick: () => handleGenerate('questionnaire-results', 'xlsx'),
               },
             ]}
           />

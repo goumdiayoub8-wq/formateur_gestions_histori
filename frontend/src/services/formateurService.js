@@ -115,6 +115,20 @@ const FormateurService = {
     );
   },
 
+  getModulesQuestionnaires() {
+    return apiRequest(
+      {
+        url: `${FORMATEUR_BASE}/modules-questionnaires`,
+        method: 'get',
+      },
+      {
+        dedupeKey: 'formateur:modules-questionnaires',
+        cacheKey: 'formateur:modules-questionnaires',
+        cacheTtlMs: 30000,
+      },
+    );
+  },
+
   createDemande(payload) {
     return apiRequest({
       url: `${FORMATEUR_BASE}?action=demandes`,

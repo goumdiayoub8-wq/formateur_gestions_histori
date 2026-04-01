@@ -88,7 +88,14 @@ export default function Rapports() {
   const [error, setError] = useState('');
   const [actionLoading, setActionLoading] = useState('');
 
-  const visibleReportTypes = ['module_progress', 'validation_status'];
+  const visibleReportTypes = [
+    'module_progress',
+    'validation_status',
+    'global_platform_summary',
+    'hours_by_department',
+    'top_trainers',
+    'module_success_rates',
+  ];
 
   const load = async () => {
     setLoading(true);
@@ -112,10 +119,31 @@ export default function Rapports() {
     setActionLoading(key);
     setError('');
     try {
-      const report =
-        type === 'module-progress'
-          ? await ReportService.generateModuleProgress(format)
-          : await ReportService.generateValidationStatus(format);
+      let report;
+
+      switch (type) {
+        case 'module-progress':
+          report = await ReportService.generateModuleProgress(format);
+          break;
+        case 'validation-status':
+          report = await ReportService.generateValidationStatus(format);
+          break;
+        case 'global-platform-summary':
+          report = await ReportService.generateGlobalPlatformSummary(format);
+          break;
+        case 'hours-by-department':
+          report = await ReportService.generateHoursByDepartment(format);
+          break;
+        case 'top-trainers':
+          report = await ReportService.generateTopTrainers(format);
+          break;
+        case 'module-success-rates':
+          report = await ReportService.generateModuleSuccessRates(format);
+          break;
+        default:
+          throw new Error('Type de rapport non pris en charge.');
+      }
+
       const blob = await ReportService.download(report.id);
       saveBlob(blob, reportFilename(report));
       await load();
@@ -211,6 +239,122 @@ export default function Rapports() {
             <ReportActionButton
               loading={actionLoading === 'validation-status-xlsx'}
               onClick={() => handleGenerate('validation-status', 'xlsx')}
+              icon={Download}
+              variant="secondary"
+            >
+              Export Excel
+            </ReportActionButton>
+          </div>
+        </DirectorSurface>
+
+        <DirectorSurface className="p-6">
+          <div className="flex items-start gap-4">
+            <span className="inline-flex h-12 w-12 items-center justify-center rounded-[14px] bg-[#eef3ff] text-[#315cf0]">
+              <FileText className="h-6 w-6" />
+            </span>
+            <div>
+              <h2 className="text-[18px] font-semibold text-[#17233a]">Synthèse globale plateforme</h2>
+              <p className="mt-2 text-[16px] text-[#6d7b92]">Vue consolidée des KPIs, validations, filières et top formateurs</p>
+            </div>
+          </div>
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <ReportActionButton
+              loading={actionLoading === 'global-platform-summary-pdf'}
+              onClick={() => handleGenerate('global-platform-summary', 'pdf')}
+              icon={Download}
+            >
+              Export PDF
+            </ReportActionButton>
+            <ReportActionButton
+              loading={actionLoading === 'global-platform-summary-xlsx'}
+              onClick={() => handleGenerate('global-platform-summary', 'xlsx')}
+              icon={Download}
+              variant="secondary"
+            >
+              Export Excel
+            </ReportActionButton>
+          </div>
+        </DirectorSurface>
+
+        <DirectorSurface className="p-6">
+          <div className="flex items-start gap-4">
+            <span className="inline-flex h-12 w-12 items-center justify-center rounded-[14px] bg-[#edfdf2] text-[#16a34a]">
+              <FileText className="h-6 w-6" />
+            </span>
+            <div>
+              <h2 className="text-[18px] font-semibold text-[#17233a]">Heures par filière</h2>
+              <p className="mt-2 text-[16px] text-[#6d7b92]">Analyse des volumes planifiés et réalisés par département pédagogique</p>
+            </div>
+          </div>
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <ReportActionButton
+              loading={actionLoading === 'hours-by-department-pdf'}
+              onClick={() => handleGenerate('hours-by-department', 'pdf')}
+              icon={Download}
+            >
+              Export PDF
+            </ReportActionButton>
+            <ReportActionButton
+              loading={actionLoading === 'hours-by-department-xlsx'}
+              onClick={() => handleGenerate('hours-by-department', 'xlsx')}
+              icon={Download}
+              variant="secondary"
+            >
+              Export Excel
+            </ReportActionButton>
+          </div>
+        </DirectorSurface>
+
+        <DirectorSurface className="p-6">
+          <div className="flex items-start gap-4">
+            <span className="inline-flex h-12 w-12 items-center justify-center rounded-[14px] bg-[#fff6ea] text-[#f59e0b]">
+              <FileText className="h-6 w-6" />
+            </span>
+            <div>
+              <h2 className="text-[18px] font-semibold text-[#17233a]">Top formateurs</h2>
+              <p className="mt-2 text-[16px] text-[#6d7b92]">Classement des formateurs selon l exécution réelle et les questionnaires</p>
+            </div>
+          </div>
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <ReportActionButton
+              loading={actionLoading === 'top-trainers-pdf'}
+              onClick={() => handleGenerate('top-trainers', 'pdf')}
+              icon={Download}
+            >
+              Export PDF
+            </ReportActionButton>
+            <ReportActionButton
+              loading={actionLoading === 'top-trainers-xlsx'}
+              onClick={() => handleGenerate('top-trainers', 'xlsx')}
+              icon={Download}
+              variant="secondary"
+            >
+              Export Excel
+            </ReportActionButton>
+          </div>
+        </DirectorSurface>
+
+        <DirectorSurface className="p-6">
+          <div className="flex items-start gap-4">
+            <span className="inline-flex h-12 w-12 items-center justify-center rounded-[14px] bg-[#fff0f6] text-[#db2777]">
+              <FileText className="h-6 w-6" />
+            </span>
+            <div>
+              <h2 className="text-[18px] font-semibold text-[#17233a]">Taux de réussite modules</h2>
+              <p className="mt-2 text-[16px] text-[#6d7b92]">Taux de completion et réussite des modules pour arbitrage direction</p>
+            </div>
+          </div>
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <ReportActionButton
+              loading={actionLoading === 'module-success-rates-pdf'}
+              onClick={() => handleGenerate('module-success-rates', 'pdf')}
+              icon={Download}
+            >
+              Export PDF
+            </ReportActionButton>
+            <ReportActionButton
+              loading={actionLoading === 'module-success-rates-xlsx'}
+              onClick={() => handleGenerate('module-success-rates', 'xlsx')}
               icon={Download}
               variant="secondary"
             >

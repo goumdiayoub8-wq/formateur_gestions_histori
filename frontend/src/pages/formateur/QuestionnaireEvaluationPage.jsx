@@ -1,490 +1,346 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import {
-  CheckCircle2,
-  ClipboardCheck,
-  MessageSquareText,
-  Send,
-  ShieldAlert,
-  Star,
-} from 'lucide-react';
-import QuestionnaireService from '../../services/questionnaireService';
+import React from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
+import { ArrowLeft, ArrowRight, CircleCheckBig, LockKeyhole, Sparkles } from 'lucide-react';
 import Spinner from '../../components/ui/Spinner';
-import {
-  FormateurEmptyBlock,
-  FormateurPanel,
-  FormateurSectionHeader,
-  FormateurStatCard,
-} from '../../components/formateur/FormateurUI';
 import { cn } from '../../lib/cn';
+import QuestionCard from './questionnaire/QuestionCard';
+import QuestionnaireNavigation from './questionnaire/QuestionnaireNavigation';
+import QuestionnaireProgressBar from './questionnaire/QuestionnaireProgressBar';
+import { getScoreMeta, useQuestionnaire } from './questionnaire/useQuestionnaire';
 
-function getScoreMeta(percentage) {
-  const value = Number(percentage);
-
-  if (!Number.isFinite(value)) {
-    return {
-      tone: 'slate',
-      message: 'Non evalue',
-      progressClassName: 'bg-[#9aa9bd]',
-      badgeClassName: 'bg-[#eef3f9] text-[#5b708d]',
-    };
-  }
-
-  if (value >= 75) {
-    return {
-      tone: 'green',
-      message: 'Excellent',
-      progressClassName: 'bg-[#16c55b]',
-      badgeClassName: 'bg-[#eafaf0] text-[#129347]',
-    };
-  }
-
-  if (value >= 50) {
-    return {
-      tone: 'orange',
-      message: 'Good',
-      progressClassName: 'bg-[#ff9b1f]',
-      badgeClassName: 'bg-[#fff3e2] text-[#d97a00]',
-    };
-  }
-
-  return {
-    tone: 'red',
-    message: 'Needs improvement',
-    progressClassName: 'bg-[#ef4444]',
-    badgeClassName: 'bg-[#fff0f0] text-[#cd3e3e]',
-  };
+function QuestionnaireBackdrop() {
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      <div className="absolute -left-24 top-10 h-72 w-72 rounded-full bg-[#60a5fa]/25 blur-3xl" />
+      <div className="absolute right-0 top-24 h-80 w-80 rounded-full bg-[#22d3ee]/20 blur-3xl" />
+      <div className="absolute bottom-0 left-1/3 h-96 w-96 rounded-full bg-[#f8fafc] blur-3xl" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.82),rgba(248,250,252,0.32)_42%,rgba(226,232,240,0.18)_100%)]" />
+    </div>
+  );
 }
 
-function QuestionInput({ question, value, disabled, error, onChange }) {
-  if (question.type === 'rating') {
-    return (
-      <div className="flex flex-wrap gap-3">
-        {[1, 2, 3, 4, 5].map((rating) => {
-          const active = Number(value) === rating;
-
-          return (
-            <button
-              key={rating}
-              type="button"
-              disabled={disabled}
-              onClick={() => onChange(rating)}
-              className={cn(
-                'inline-flex min-w-[64px] items-center justify-center gap-2 rounded-[16px] border px-4 py-3 text-sm font-semibold transition',
-                active
-                  ? 'border-[#ffb703] bg-[#fff5d8] text-[#a75b00]'
-                  : 'border-[#dce6f2] bg-white text-[#45607c] hover:border-[#c5d4e6] hover:bg-[#f8fbff]',
-                disabled ? 'cursor-not-allowed opacity-70' : '',
-              )}
-            >
-              <Star className={cn('h-4 w-4', active ? 'fill-current' : '')} />
-              {rating}
-            </button>
-          );
-        })}
+function LoadingState() {
+  return (
+    <div className="flex min-h-screen items-center justify-center px-6">
+      <div className="rounded-[32px] border border-white/70 bg-white/75 px-10 py-8 text-center shadow-[0_24px_80px_rgba(15,23,42,0.16)] backdrop-blur-2xl">
+        <Spinner className="mx-auto h-10 w-10 border-slate-300 border-t-[#2563eb]" />
+        <p className="mt-4 text-sm font-medium text-slate-600">Chargement du questionnaire...</p>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
-  if (question.type === 'yes/no') {
-    return (
-      <div className="flex flex-wrap gap-3">
-        {[
-          { label: 'Oui', value: 'yes' },
-          { label: 'Non', value: 'no' },
-        ].map((option) => {
-          const active = value === option.value;
-
-          return (
-            <button
-              key={option.value}
-              type="button"
-              disabled={disabled}
-              onClick={() => onChange(option.value)}
-              className={cn(
-                'rounded-[16px] border px-5 py-3 text-sm font-semibold transition',
-                active
-                  ? option.value === 'yes'
-                    ? 'border-[#c9f0d8] bg-[#eefcf3] text-[#15954a]'
-                    : 'border-[#ffd6d6] bg-[#fff3f3] text-[#d34b4b]'
-                  : 'border-[#dce6f2] bg-white text-[#45607c] hover:border-[#c5d4e6] hover:bg-[#f8fbff]',
-                disabled ? 'cursor-not-allowed opacity-70' : '',
-              )}
-            >
-              {option.label}
-            </button>
-          );
-        })}
+function ErrorState({ message }) {
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 24, scale: 0.96 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      className="w-full max-w-xl rounded-[34px] border border-white/60 bg-white/78 p-8 shadow-[0_34px_120px_rgba(15,23,42,0.22)] backdrop-blur-2xl"
+    >
+      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-950 text-white shadow-[0_16px_36px_rgba(15,23,42,0.22)]">
+        <LockKeyhole className="h-8 w-8" />
       </div>
-    );
-  }
+      <h1 className="mt-6 text-3xl font-bold tracking-tight text-slate-950">Questionnaire introuvable</h1>
+      <p className="mt-3 text-[15px] leading-7 text-slate-600">
+        {message || 'Le lien du questionnaire est invalide, expire ou ne vous est pas accessible.'}
+      </p>
+      <div className="mt-8 flex flex-wrap items-center gap-3">
+        <Link
+          to="/formateur/modules"
+          className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+        >
+          Retour a mes modules
+          <ArrowRight className="h-4 w-4" />
+        </Link>
+        <Link
+          to="/formateur"
+          className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Retour au tableau de bord
+        </Link>
+      </div>
+    </motion.section>
+  );
+}
+
+function IntroCard({ questionnaire, totalQuestions, summary, onStart }) {
+  return (
+    <motion.section
+      layoutId="questionnaire-shell"
+      initial={{ opacity: 0, scale: 0.9, y: 28 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+      className="w-full max-w-xl rounded-[36px] border border-white/60 bg-white/78 p-6 shadow-[0_34px_120px_rgba(15,23,42,0.22)] backdrop-blur-2xl sm:p-8"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="inline-flex items-center gap-2 rounded-full border border-[#bfdbfe] bg-[#eff6ff] px-4 py-2 text-sm font-semibold text-[#1d4ed8]">
+          <Sparkles className="h-4 w-4" />
+          Evaluation module
+        </div>
+        {questionnaire?.module_code ? (
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-500">
+            {questionnaire.module_code}
+          </span>
+        ) : null}
+      </div>
+
+      <h1 className="mt-6 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">
+        {questionnaire?.module_name || questionnaire?.title || 'Questionnaire de formation'}
+      </h1>
+      <p className="mt-4 text-[15px] leading-7 text-slate-600">
+        Repondez a chaque question une par une. Vos choix sont enregistres pour ce module uniquement.
+      </p>
+
+      <div className="mt-8 grid gap-4 sm:grid-cols-3">
+        <div className="rounded-[24px] border border-white/70 bg-white/76 px-5 py-5">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Questions</p>
+          <p className="mt-3 text-3xl font-bold tracking-tight text-slate-950">{totalQuestions}</p>
+        </div>
+        <div className="rounded-[24px] border border-white/70 bg-white/76 px-5 py-5">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Obligatoires</p>
+          <p className="mt-3 text-3xl font-bold tracking-tight text-slate-950">{summary.requiredQuestions}</p>
+        </div>
+        <div className="rounded-[24px] border border-white/70 bg-white/76 px-5 py-5">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Deja remplies</p>
+          <p className="mt-3 text-3xl font-bold tracking-tight text-slate-950">{summary.answeredQuestions}</p>
+        </div>
+      </div>
+
+      <motion.button
+        type="button"
+        whileHover={{ y: -2, scale: 1.01 }}
+        whileTap={{ scale: 0.99 }}
+        onClick={onStart}
+        className="mt-8 inline-flex items-center gap-2 rounded-full bg-[linear-gradient(135deg,#2563eb,#06b6d4)] px-6 py-3 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(37,99,235,0.28)]"
+      >
+        Commencer le questionnaire
+        <ArrowRight className="h-4 w-4" />
+      </motion.button>
+    </motion.section>
+  );
+}
+
+function CompletionPanel({ score, title, description }) {
+  const scoreMeta = getScoreMeta(score?.percentage);
 
   return (
-    <textarea
-      rows={4}
-      disabled={disabled}
-      value={value || ''}
-      onChange={(event) => onChange(event.target.value)}
-      placeholder="Ajouter un commentaire si necessaire..."
-      className="w-full rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] px-4 py-3 text-[15px] text-[#1f2a3d] outline-none transition placeholder:text-[#93a4ba] focus:border-[#8aa6ff]"
-    />
+    <motion.section
+      key="completion"
+      layoutId="questionnaire-shell"
+      initial={{ opacity: 0, scale: 0.94, y: 24 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 1.02, y: -12 }}
+      transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+      className="w-full max-w-3xl rounded-[36px] border border-white/60 bg-white/78 p-6 shadow-[0_34px_120px_rgba(15,23,42,0.24)] backdrop-blur-2xl sm:p-8"
+    >
+      <div className="mx-auto flex max-w-xl flex-col items-center text-center">
+        <motion.div
+          initial={{ scale: 0.7, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ duration: 0.38, delay: 0.12 }}
+          className="flex h-20 w-20 items-center justify-center rounded-full bg-[linear-gradient(135deg,#10b981,#06b6d4)] text-white shadow-[0_18px_42px_rgba(16,185,129,0.28)]"
+        >
+          <CircleCheckBig className="h-10 w-10" />
+        </motion.div>
+
+        <h1 className="mt-6 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">{title}</h1>
+        <p className="mt-3 max-w-lg text-[15px] leading-7 text-slate-600">{description}</p>
+
+        <div className="mt-8 grid w-full gap-4 sm:grid-cols-3">
+          <div className="rounded-[24px] border border-white/70 bg-white/74 px-5 py-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Statut</p>
+            <p className={cn('mt-3 inline-flex rounded-full px-3 py-1 text-sm font-semibold', scoreMeta.badgeClassName)}>
+              {scoreMeta.label}
+            </p>
+          </div>
+          <div className="rounded-[24px] border border-white/70 bg-white/74 px-5 py-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Score</p>
+            <p className="mt-3 text-3xl font-bold tracking-tight text-slate-950">
+              {Number.isFinite(Number(score?.percentage)) ? `${Math.round(Number(score.percentage))}%` : '--'}
+            </p>
+          </div>
+          <div className="rounded-[24px] border border-white/70 bg-white/74 px-5 py-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Total</p>
+            <p className="mt-3 text-3xl font-bold tracking-tight text-slate-950">
+              {Number.isFinite(Number(score?.total_score)) ? Number(score.total_score).toFixed(1) : '--'}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-8 h-3 w-full overflow-hidden rounded-full bg-slate-200/80">
+          <motion.div
+            initial={{ width: 0 }}
+            animate={{ width: `${Math.max(0, Math.min(100, Number(score?.percentage || 0)))}%` }}
+            transition={{ duration: 0.8, ease: 'easeOut' }}
+            className={cn('h-full rounded-full bg-gradient-to-r', scoreMeta.progressClassName)}
+          />
+        </div>
+
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+          <Link
+            to="/formateur/modules"
+            className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+          >
+            Retour a mes modules
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+          <Link
+            to="/formateur"
+            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Retour au tableau de bord
+          </Link>
+        </div>
+      </div>
+    </motion.section>
   );
 }
 
 export default function QuestionnaireEvaluationPage() {
-  const [questionnaireData, setQuestionnaireData] = useState(null);
-  const [score, setScore] = useState(null);
-  const [answers, setAnswers] = useState({});
-  const [errors, setErrors] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [notice, setNotice] = useState(null);
+  const { token = '' } = useParams();
+  const {
+    canSubmit,
+    currentAnswerValue,
+    currentQuestion,
+    currentQuestionIndex,
+    handleAnswerChange,
+    handleBack,
+    handleNext,
+    handleStart,
+    handleSubmit,
+    loading,
+    notice,
+    questionnaireData,
+    score,
+    started,
+    submitSuccess,
+    submitting,
+    summary,
+    totalQuestions,
+    isCurrentStepValid,
+  } = useQuestionnaire(token);
 
-  const loadQuestionnaire = async () => {
-    try {
-      setLoading(true);
-      setNotice(null);
-
-      const [questionnaireResponse, scoreResponse] = await Promise.all([
-        QuestionnaireService.getEvaluationForm(),
-        QuestionnaireService.getEvaluationScore(),
-      ]);
-
-      setQuestionnaireData(questionnaireResponse || null);
-      setScore(scoreResponse || null);
-      setAnswers(questionnaireResponse?.existing_answers || {});
-      setErrors({});
-    } catch (error) {
-      setQuestionnaireData(null);
-      setScore(null);
-      setNotice({
-        tone: 'danger',
-        message: error?.response?.data?.message || error?.message || 'Impossible de charger l evaluation.',
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadQuestionnaire();
-  }, []);
-
-  const models = questionnaireData?.models || questionnaireData?.questions || [];
-  const scoreMeta = getScoreMeta(score?.percentage);
-  const canSubmit = Boolean(questionnaireData?.can_submit);
-
-  const metrics = useMemo(() => {
-    return {
-      modelCount: models.length,
-      weightedModels: models.filter((model) => Number(model.weight) > 0).length,
-      percentage: Number.isFinite(Number(score?.percentage)) ? `${Math.round(Number(score.percentage))}%` : 'Non evalue',
-    };
-  }, [models, score]);
-
-  const handleAnswerChange = (questionId, value) => {
-    setAnswers((current) => ({
-      ...current,
-      [questionId]: value,
-    }));
-
-    setErrors((current) => {
-      const next = { ...current };
-      delete next[questionId];
-      return next;
-    });
-  };
-
-  const validateForm = () => {
-    const nextErrors = {};
-
-    models.forEach((model) => {
-      const value = answers[model.id];
-      const empty = value === undefined || value === null || value === '';
-
-      if (empty) {
-        nextErrors[model.id] = 'Cette note est obligatoire.';
-      }
-    });
-
-    setErrors(nextErrors);
-    return Object.keys(nextErrors).length === 0;
-  };
-
-  const handleSubmit = async () => {
-    if (!validateForm()) {
-      setNotice({
-        tone: 'warning',
-        message: 'Merci de completer toutes les notes obligatoires avant l envoi.',
-      });
-      return;
-    }
-
-    try {
-      setSubmitting(true);
-      setNotice(null);
-
-      const payload = {
-        answers: models
-          .map((model) => ({
-            question_id: model.id,
-            value: answers[model.id] ?? '',
-          }))
-          .filter((answer) => answer.value !== ''),
-      };
-
-      await QuestionnaireService.submitEvaluationForm(payload);
-      await loadQuestionnaire();
-      setNotice({
-        tone: 'success',
-        message: 'Votre evaluation a ete soumise avec succes.',
-      });
-    } catch (error) {
-      setNotice({
-        tone: 'danger',
-        message: error?.response?.data?.message || error?.message || 'Soumission impossible.',
-      });
-    } finally {
-      setSubmitting(false);
-    }
-  };
+  const questionnaire = questionnaireData?.questionnaire || null;
 
   if (loading) {
     return (
-      <div className="flex min-h-[55vh] items-center justify-center">
-        <Spinner className="h-11 w-11 border-[#dbe3ef] border-t-[#1f57ff]" />
+      <div className="relative min-h-screen overflow-hidden bg-[linear-gradient(135deg,#eff6ff,#f8fafc_42%,#ecfeff)]">
+        <QuestionnaireBackdrop />
+        <LoadingState />
+      </div>
+    );
+  }
+
+  if (!questionnaireData || totalQuestions === 0) {
+    return (
+      <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[linear-gradient(135deg,#eff6ff,#f8fafc_42%,#ecfeff)] px-6 py-10">
+        <QuestionnaireBackdrop />
+        <ErrorState message={notice} />
+      </div>
+    );
+  }
+
+  if (!canSubmit || submitSuccess) {
+    return (
+      <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[linear-gradient(135deg,#eff6ff,#f8fafc_42%,#ecfeff)] px-6 py-10">
+        <QuestionnaireBackdrop />
+        <CompletionPanel
+          score={score}
+          title={submitSuccess ? 'Merci, votre questionnaire est envoye' : 'Questionnaire deja soumis'}
+          description={
+            submitSuccess
+              ? 'Votre evaluation a bien ete enregistree pour ce module. Vous pouvez revenir a vos modules a tout moment.'
+              : 'Une reponse existe deja pour ce module. Vous pouvez consulter le score recalcule ci-dessous.'
+          }
+        />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 pb-8">
-      <div className="rounded-[28px] bg-gradient-to-r from-[#2155f5] via-[#2d74ff] to-[#33b7ff] px-6 py-8 text-white shadow-[0_20px_50px_rgba(37,97,255,0.26)]">
-        <h1 className="text-[24px] font-bold tracking-tight">Evaluation des modeles</h1>
-        <p className="mt-3 max-w-3xl text-[15px] text-white/88">
-          Evaluez chaque modele avec une note de 1 a 5, puis laissez le systeme calculer automatiquement votre score global.
-        </p>
-        <div className="mt-5 flex flex-wrap gap-3 text-sm">
-          <span className="rounded-full bg-white/14 px-3 py-1.5 font-semibold">
-            {questionnaireData?.questionnaire?.title || 'Evaluation active'}
-          </span>
-          <span className="rounded-full bg-white/14 px-3 py-1.5 font-semibold">
-            {metrics.modelCount} modele(s)
-          </span>
-          <span className="rounded-full bg-white/14 px-3 py-1.5 font-semibold">
-            Score {metrics.percentage}
-          </span>
-        </div>
-      </div>
+    <div className="relative min-h-screen overflow-hidden bg-[linear-gradient(135deg,#eff6ff,#f8fafc_42%,#ecfeff)] px-6 py-8 sm:py-10">
+      <QuestionnaireBackdrop />
 
-      {notice ? (
-        <FormateurPanel
-          className={cn(
-            'px-6 py-5 text-[15px] font-medium',
-            notice.tone === 'success'
-              ? 'border-[#cfead8] bg-[#f0fbf4] text-[#187a42]'
-              : notice.tone === 'warning'
-                ? 'border-[#ffe2b5] bg-[#fff8ec] text-[#b56a0a]'
-                : 'border-[#ffd9d9] bg-[#fff5f5] text-[#d14343]',
-          )}
-        >
-          {notice.message}
-        </FormateurPanel>
-      ) : null}
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <FormateurStatCard
-          icon={ClipboardCheck}
-          iconClassName="bg-[#eef3ff] text-[#315cf0]"
-          label="Modeles"
-          value={metrics.modelCount}
-          helper="Modeles charges pour cette evaluation"
-        />
-        <FormateurStatCard
-          icon={ShieldAlert}
-          iconClassName="bg-[#fff5e8] text-[#e67f1a]"
-          label="Modeles notes"
-          value={metrics.weightedModels}
-          helper="Modeles pris en compte dans le calcul"
-        />
-        <FormateurStatCard
-          icon={CheckCircle2}
-          iconClassName="bg-[#edf9f1] text-[#12a44a]"
-          label="Mon score"
-          value={metrics.percentage}
-          helper={scoreMeta.message}
-          progress={Number.isFinite(Number(score?.percentage)) ? Number(score.percentage) : 0}
-          progressClassName={scoreMeta.progressClassName}
-        />
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-        <FormateurPanel className="p-6">
-          <FormateurSectionHeader
-            title="Modeles"
-            description="Tous les modeles doivent recevoir une note avant la soumission."
-          />
-
-          {models.length === 0 ? (
-            <div className="mt-6">
-              <FormateurEmptyBlock
-                title="Aucun modele disponible"
-                description="L evaluation n est pas encore configuree pour votre espace."
+      <div className="relative mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-6xl items-center justify-center">
+        <LayoutGroup>
+          <AnimatePresence mode="wait">
+            {!started ? (
+              <IntroCard
+                key="intro"
+                questionnaire={questionnaire}
+                totalQuestions={totalQuestions}
+                summary={summary}
+                onStart={handleStart}
               />
-            </div>
-          ) : (
-            <div className="mt-6 space-y-4">
-              {models.map((model, index) => (
-                <div key={model.id} className="rounded-[24px] border border-[#e1e9f3] bg-[#fbfdff] px-5 py-5">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="text-[13px] font-semibold uppercase tracking-[0.16em] text-[#8c9bb0]">
-                        Modele {index + 1}
-                      </p>
-                      <h3 className="mt-2 text-[17px] font-bold leading-7 text-[#1f2a3d]">
-                        {model.name || model.question_text}
-                      </h3>
-                      {model.description ? (
-                        <p className="mt-2 max-w-3xl text-[14px] leading-6 text-[#6f8199]">{model.description}</p>
-                      ) : null}
+            ) : (
+              <motion.section
+                key="questionnaire"
+                layoutId="questionnaire-shell"
+                initial={{ opacity: 0, scale: 0.92, y: 30 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.98, y: -20 }}
+                transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+                className="w-full rounded-[36px] border border-white/60 bg-white/74 p-5 shadow-[0_34px_120px_rgba(15,23,42,0.22)] backdrop-blur-2xl sm:p-7 lg:p-9"
+              >
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="max-w-2xl">
+                    <div className="inline-flex items-center gap-2 rounded-full border border-[#bfdbfe] bg-[#eff6ff] px-4 py-2 text-sm font-semibold text-[#1d4ed8]">
+                      <Sparkles className="h-4 w-4" />
+                      Parcours guide
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <span className="rounded-full bg-[#eef4ff] px-3 py-1 text-[12px] font-bold text-[#3163ef]">
-                        Rating
-                      </span>
-                      <span className="rounded-full bg-[#f4f7fb] px-3 py-1 text-[12px] font-bold text-[#62748f]">
-                        Poids {Number(model.weight)}
-                      </span>
-                      <span className="rounded-full bg-[#edf9f1] px-3 py-1 text-[12px] font-bold text-[#129347]">
-                        Global {Number.isFinite(Number(model.global_score?.percentage)) ? `${Math.round(Number(model.global_score.percentage))}%` : '--'}
-                      </span>
-                    </div>
+                    <h1 className="mt-4 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">
+                      {questionnaire?.module_name || questionnaire?.title || 'Questionnaire de formation'}
+                    </h1>
+                    <p className="mt-3 text-[15px] leading-7 text-slate-600">
+                      Repondez a chaque question avant de passer a la suivante. Le questionnaire reste propre a ce module.
+                    </p>
                   </div>
 
-                  {Array.isArray(model.skills) && model.skills.length ? (
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {model.skills.map((skill) => (
-                        <span key={`${model.id}-${skill}`} className="rounded-full bg-[#f5f8fd] px-3 py-1 text-[12px] font-semibold text-[#5a6f8e]">
-                          {skill}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-
-                  <div className="mt-5">
-                    <QuestionInput
-                      question={model}
-                      value={answers[model.id] ?? ''}
-                      disabled={!canSubmit || submitting}
-                      error={errors[model.id]}
-                      onChange={(value) => handleAnswerChange(model.id, value)}
-                    />
-                    {errors[model.id] ? (
-                      <p className="mt-3 text-sm font-semibold text-[#d14343]">{errors[model.id]}</p>
+                  <div className="rounded-[24px] border border-white/70 bg-white/80 px-5 py-4 text-sm text-slate-600">
+                    {questionnaire?.module_code ? (
+                      <p className="font-semibold text-slate-900">{questionnaire.module_code}</p>
                     ) : null}
+                    <p className="mt-1">
+                      Etape {currentQuestionIndex + 1} sur {totalQuestions}
+                    </p>
+                    <p className="mt-1">
+                      {summary.answeredQuestions} reponse{summary.answeredQuestions > 1 ? 's' : ''} renseignee
+                      {summary.answeredQuestions > 1 ? 's' : ''}
+                    </p>
                   </div>
                 </div>
-              ))}
 
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] bg-[#f5f8fd] px-5 py-5">
-                <div>
-                  <p className="text-[17px] font-bold text-[#1f2a3d]">
-                    {canSubmit ? 'Pret a envoyer ?' : 'Evaluation deja soumise'}
-                  </p>
-                  <p className="mt-2 text-[15px] text-[#6f8199]">
-                    {canSubmit
-                      ? 'Une seule soumission est autorisee pour cette evaluation.'
-                      : 'Votre notation a deja ete enregistree. Le score reste visible dans votre dashboard.'}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  disabled={!canSubmit || submitting || models.length === 0}
-                  onClick={handleSubmit}
-                  className="inline-flex items-center gap-2 rounded-[18px] bg-[linear-gradient(90deg,_#2155f5_0%,_#33b7ff_100%)] px-5 py-3 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(33,85,245,0.24)] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <Send className="h-4 w-4" />
-                  {submitting ? 'Envoi en cours...' : 'Soumettre l evaluation'}
-                </button>
-              </div>
-            </div>
-          )}
-        </FormateurPanel>
+                <QuestionnaireProgressBar
+                  currentQuestionIndex={currentQuestionIndex}
+                  totalQuestions={totalQuestions}
+                />
 
-        <FormateurPanel className="p-6">
-          <FormateurSectionHeader
-            title="Resultat global"
-            description="Votre score est calcule automatiquement a partir des notes attribuees aux modeles."
-          />
+                <QuestionCard
+                  currentQuestion={currentQuestion}
+                  currentQuestionIndex={currentQuestionIndex}
+                  totalQuestions={totalQuestions}
+                  selectedValue={currentAnswerValue}
+                  disabled={submitting}
+                  notice={notice}
+                  onChange={handleAnswerChange}
+                />
 
-          <div className="mt-6 rounded-[24px] bg-[#f8fbff] px-5 py-5">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-[14px] font-semibold uppercase tracking-[0.14em] text-[#8b9bb1]">
-                  Score global
-                </p>
-                <p className="mt-3 text-[40px] font-bold tracking-tight text-[#1f2a3d]">
-                  {Number.isFinite(Number(score?.percentage)) ? `${Math.round(Number(score.percentage))}%` : '--'}
-                </p>
-              </div>
-              <span className={cn('rounded-full px-3 py-1.5 text-[12px] font-bold', scoreMeta.badgeClassName)}>
-                {scoreMeta.message}
-              </span>
-            </div>
-
-            <div className="mt-5 h-3 overflow-hidden rounded-full bg-[#e7edf6]">
-              <div
-                className={cn('h-full rounded-full transition-all duration-500', scoreMeta.progressClassName)}
-                style={{
-                  width: `${Math.max(0, Math.min(100, Number(score?.percentage || 0)))}%`,
-                }}
-              />
-            </div>
-
-            <div className="mt-4 flex items-center justify-between text-[13px] text-[#7f90a8]">
-              <span>0%</span>
-              <span>100%</span>
-            </div>
-
-            <div className="mt-5 space-y-3 text-[15px] text-[#51627c]">
-              <p>
-                Total obtenu:{' '}
-                <span className="font-semibold text-[#1f2a3d]">
-                  {Number.isFinite(Number(score?.total_score)) ? Number(score.total_score).toFixed(2) : '--'}
-                </span>
-              </p>
-              <p>
-                Score maximal:{' '}
-                <span className="font-semibold text-[#1f2a3d]">
-                  {Number.isFinite(Number(score?.max_score)) ? Number(score.max_score).toFixed(2) : '--'}
-                </span>
-              </p>
-              <p>
-                Statut:{' '}
-                <span className="font-semibold text-[#1f2a3d]">{scoreMeta.message}</span>
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-5 rounded-[24px] border border-dashed border-[#d6e3f1] bg-[#fbfdff] px-5 py-5">
-            <div className="flex items-start gap-3">
-              <MessageSquareText className="mt-0.5 h-5 w-5 text-[#315cf0]" />
-              <div>
-                <p className="text-[16px] font-bold text-[#1f2a3d]">Visibilite chef de pole</p>
-                <p className="mt-2 text-[15px] leading-7 text-[#70819a]">
-                  Le score global et les scores moyens par modele sont automatiquement repris dans le suivi cote chef.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <Link
-            to="/formateur"
-            className="mt-5 inline-flex items-center rounded-[16px] border border-[#dbe4ef] px-4 py-3 text-sm font-semibold text-[#36506d] transition hover:bg-[#f8fbff]"
-          >
-            Retour au dashboard
-          </Link>
-        </FormateurPanel>
+                <QuestionnaireNavigation
+                  currentQuestionIndex={currentQuestionIndex}
+                  totalQuestions={totalQuestions}
+                  isCurrentStepValid={isCurrentStepValid}
+                  submitting={submitting}
+                  onBack={handleBack}
+                  onNext={handleNext}
+                  onSubmit={handleSubmit}
+                />
+              </motion.section>
+            )}
+          </AnimatePresence>
+        </LayoutGroup>
       </div>
     </div>
   );

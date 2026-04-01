@@ -29,6 +29,10 @@ function formatRelativeDate(value) {
 
 const pieColors = ['#1db885', '#f8a30b', '#f44747'];
 
+function formatPercent(value) {
+  return `${Math.round(Number(value || 0))}%`;
+}
+
 export default function DashboardDirecteur() {
   const [overview, setOverview] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -170,6 +174,41 @@ export default function DashboardDirecteur() {
         />
       </div>
 
+      <div className="grid gap-5 xl:grid-cols-4">
+        <DirectorStatCard
+          icon={CalendarRange}
+          iconWrapperClassName="bg-[#eef8ff]"
+          iconClassName="text-[#2680eb]"
+          label="Progression globale"
+          value={formatPercent(overview?.global_performance?.completion_rate ?? 0)}
+          hint="Modules"
+        />
+        <DirectorStatCard
+          icon={BookOpen}
+          iconWrapperClassName="bg-[#fff6ea]"
+          iconClassName="text-[#f59e0b]"
+          label="Couverture planning"
+          value={formatPercent(overview?.global_performance?.planned_coverage_rate ?? 0)}
+          hint="Validé"
+        />
+        <DirectorStatCard
+          icon={Users2}
+          iconWrapperClassName="bg-[#edfdf2]"
+          iconClassName="text-[#16a34a]"
+          label="Taux questionnaires"
+          value={formatPercent(overview?.global_performance?.questionnaire_completion_rate ?? 0)}
+          hint="Réponses"
+        />
+        <DirectorStatCard
+          icon={CheckCircle2}
+          iconWrapperClassName="bg-[#f7efff]"
+          iconClassName="text-[#8b5cf6]"
+          label="Note moyenne"
+          value={`${Math.round(overview?.global_performance?.questionnaire_average ?? 0)}%`}
+          hint="Evaluation"
+        />
+      </div>
+
       <DirectorSurface className="p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -267,6 +306,159 @@ export default function DashboardDirecteur() {
                 <Bar dataKey="pending_percent" stackId="a" fill="#e6eaf2" radius={[10, 10, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
+          </div>
+        </DirectorSurface>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <DirectorSurface className="p-6">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-[20px] font-semibold text-[#18243a]">Heures par filière</h2>
+              <p className="mt-2 text-[15px] text-[#6b7a92]">
+                Vision consolidée des heures prévues et réellement exécutées par département.
+              </p>
+            </div>
+          </div>
+          <div className="mt-6 h-[320px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={overview?.hours_by_filiere || []} barCategoryGap={18}>
+                <CartesianGrid stroke="#edf2f8" vertical={false} />
+                <XAxis dataKey="filiere" tick={{ fill: '#7a879b', fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#7a879b', fontSize: 12 }} axisLine={false} tickLine={false} />
+                <Tooltip />
+                <Bar dataKey="planned_hours" fill="#d8dce7" radius={[8, 8, 0, 0]} />
+                <Bar dataKey="completed_hours" fill="#4f35f2" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </DirectorSurface>
+
+        <DirectorSurface className="p-6">
+          <div>
+            <h2 className="text-[20px] font-semibold text-[#18243a]">Classement formateurs</h2>
+            <p className="mt-2 text-[15px] text-[#6b7a92]">
+              Classement combinant l’exécution réelle et les résultats questionnaire pour prioriser l’accompagnement.
+            </p>
+          </div>
+          <div className="mt-6 space-y-4">
+            {(overview?.trainer_ranking || []).length ? (
+              overview.trainer_ranking.map((trainer) => (
+                <div key={trainer.id} className="rounded-[18px] border border-[#dde4ef] px-4 py-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-[16px] font-semibold text-[#17233a]">
+                        #{trainer.rank} {trainer.nom}
+                      </p>
+                      <p className="mt-1 text-sm text-[#7a869b]">{trainer.specialite || 'Spécialité non définie'}</p>
+                    </div>
+                    <span className="rounded-full bg-[#eef3ff] px-3 py-1 text-sm font-semibold text-[#315cf0]">
+                      {trainer.score}
+                    </span>
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-[14px] bg-[#f8fbff] px-3 py-3">
+                      <p className="text-xs uppercase tracking-[0.08em] text-[#8a98ad]">Exécution</p>
+                      <p className="mt-2 text-[17px] font-semibold text-[#17233a]">
+                        {Math.round(trainer.completed_hours)}h / {Math.round(trainer.planned_hours)}h
+                      </p>
+                    </div>
+                    <div className="rounded-[14px] bg-[#f8fbff] px-3 py-3">
+                      <p className="text-xs uppercase tracking-[0.08em] text-[#8a98ad]">Questionnaire</p>
+                      <p className="mt-2 text-[17px] font-semibold text-[#17233a]">
+                        {trainer.questionnaire_percentage !== null ? `${Math.round(trainer.questionnaire_percentage)}%` : 'En attente'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-[18px] border border-dashed border-[#dde4ef] px-4 py-10 text-center text-[#6b7a92]">
+                Aucun classement disponible pour le moment.
+              </div>
+            )}
+          </div>
+        </DirectorSurface>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <DirectorSurface className="p-6">
+          <h2 className="text-[20px] font-semibold text-[#18243a]">Modules à surveiller</h2>
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <div className="rounded-[20px] border border-[#e7edf6] bg-[#f9fbff] p-4">
+              <p className="text-sm font-semibold uppercase tracking-[0.08em] text-[#6b7a92]">Meilleurs modules</p>
+              <div className="mt-4 space-y-4">
+                {(overview?.module_highlights?.best || []).map((module) => (
+                  <div key={`best-${module.id}`} className="rounded-[16px] bg-white px-4 py-4">
+                    <p className="text-[15px] font-semibold text-[#17233a]">{module.code} - {module.intitule}</p>
+                    <p className="mt-1 text-sm text-[#7a869b]">{module.formateur_nom}</p>
+                    <p className="mt-3 text-sm font-semibold text-[#16a34a]">{module.progress_percent}% complété</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-[20px] border border-[#e7edf6] bg-[#fff8f8] p-4">
+              <p className="text-sm font-semibold uppercase tracking-[0.08em] text-[#6b7a92]">Modules en retard</p>
+              <div className="mt-4 space-y-4">
+                {(overview?.module_highlights?.worst || []).map((module) => (
+                  <div key={`worst-${module.id}`} className="rounded-[16px] bg-white px-4 py-4">
+                    <p className="text-[15px] font-semibold text-[#17233a]">{module.code} - {module.intitule}</p>
+                    <p className="mt-1 text-sm text-[#7a869b]">{module.formateur_nom}</p>
+                    <p className="mt-3 text-sm font-semibold text-[#d14343]">{module.progress_percent}% complété</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </DirectorSurface>
+
+        <DirectorSurface className="p-6">
+          <h2 className="text-[20px] font-semibold text-[#18243a]">Analyse questionnaires</h2>
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <div className="rounded-[18px] border border-[#e7edf6] bg-[#f9fbff] px-4 py-4">
+              <p className="text-xs uppercase tracking-[0.08em] text-[#8a98ad]">Couverture</p>
+              <p className="mt-2 text-[34px] font-semibold leading-none text-[#17233a]">
+                {overview?.questionnaire_analytics?.completion_rate ?? 0}%
+              </p>
+              <p className="mt-2 text-sm text-[#6b7a92]">
+                {overview?.questionnaire_analytics?.completed_questionnaires ?? 0} réponses sur {overview?.questionnaire_analytics?.assigned_questionnaires ?? 0}
+              </p>
+            </div>
+            <div className="rounded-[18px] border border-[#e7edf6] bg-[#f9fbff] px-4 py-4">
+              <p className="text-xs uppercase tracking-[0.08em] text-[#8a98ad]">Moyenne</p>
+              <p className="mt-2 text-[34px] font-semibold leading-none text-[#17233a]">
+                {Math.round(overview?.questionnaire_analytics?.average_percentage ?? 0)}%
+              </p>
+              <p className="mt-2 text-sm text-[#6b7a92]">Score moyen de satisfaction et d’évaluation.</p>
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <div className="rounded-[20px] border border-[#e7edf6] bg-[#f9fbff] p-4">
+              <p className="text-sm font-semibold uppercase tracking-[0.08em] text-[#6b7a92]">Top modules questionnaire</p>
+              <div className="mt-4 space-y-4">
+                {(overview?.questionnaire_analytics?.top_modules || []).map((module) => (
+                  <div key={`questionnaire-top-${module.id}`} className="rounded-[16px] bg-white px-4 py-4">
+                    <p className="text-[15px] font-semibold text-[#17233a]">{module.code} - {module.intitule}</p>
+                    <p className="mt-1 text-sm text-[#7a869b]">{module.response_count} réponse(s)</p>
+                    <p className="mt-3 text-sm font-semibold text-[#16a34a]">{Math.round(module.average_percentage)}%</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-[20px] border border-[#e7edf6] bg-[#fff8f8] p-4">
+              <p className="text-sm font-semibold uppercase tracking-[0.08em] text-[#6b7a92]">Modules à retravailler</p>
+              <div className="mt-4 space-y-4">
+                {(overview?.questionnaire_analytics?.bottom_modules || []).map((module) => (
+                  <div key={`questionnaire-bottom-${module.id}`} className="rounded-[16px] bg-white px-4 py-4">
+                    <p className="text-[15px] font-semibold text-[#17233a]">{module.code} - {module.intitule}</p>
+                    <p className="mt-1 text-sm text-[#7a869b]">{module.response_count} réponse(s)</p>
+                    <p className="mt-3 text-sm font-semibold text-[#d14343]">{Math.round(module.average_percentage)}%</p>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </DirectorSurface>
       </div>

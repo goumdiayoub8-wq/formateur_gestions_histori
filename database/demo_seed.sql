@@ -16,6 +16,10 @@ DELETE FROM `evaluation_scores`;
 
 DELETE FROM `evaluation_questionnaires`;
 
+DELETE FROM `formateur_module_scores`;
+
+DELETE FROM `module_questionnaires`;
+
 DELETE FROM `request_throttles`;
 
 DELETE FROM `ai_scores`;
@@ -57,6 +61,10 @@ ALTER TABLE `evaluation_questions` AUTO_INCREMENT = 1;
 ALTER TABLE `evaluation_scores` AUTO_INCREMENT = 1;
 
 ALTER TABLE `evaluation_questionnaires` AUTO_INCREMENT = 1;
+
+ALTER TABLE `formateur_module_scores` AUTO_INCREMENT = 1;
+
+ALTER TABLE `module_questionnaires` AUTO_INCREMENT = 1;
 
 ALTER TABLE `request_throttles` AUTO_INCREMENT = 1;
 
@@ -115,6 +123,20 @@ INSERT INTO `modules` (`id`, `code`, `intitule`, `filiere`, `semestre`, `volume_
   (10, 'SCRUM101', 'Gestion agile de projet', 'Tronc Commun', 'S2', 35, 0, '2025-09-10 09:27:00', NULL),
   (11, 'API201', 'Concevoir des API REST', 'Developpement Digital', 'S2', 65, 1, '2025-09-10 09:30:00', NULL),
   (12, 'TEST101', 'Mettre en place les tests logiciels', 'Qualite Logicielle', 'S1', 40, 0, '2025-09-10 09:33:00', NULL);
+
+INSERT INTO `module_questionnaires` (`id`, `module_id`, `questionnaire_id`, `questionnaire_token`, `total_questions`, `created_at`, `updated_at`) VALUES
+  (1, 1, 'module-1', '61d0d01710f24ec19424601b1e8c5af613f9e84eb627d3ef', 20, '2025-09-10 11:00:00', NULL),
+  (2, 2, 'module-2', '2677e45dc56549238848344c5f804f3d4c17af869b7ff262', 20, '2025-09-10 11:05:00', NULL),
+  (3, 3, 'module-3', '4ddf3717b12347a2afae33af30564671c77cc6d7a0e34a71', 20, '2025-09-10 11:10:00', NULL),
+  (4, 4, 'module-4', '4c93b53ae7c6413fb1b6d1fd5fe0ff8e7f9d0a9dca9f14c6', 20, '2025-09-10 11:15:00', NULL),
+  (5, 5, 'module-5', '7f04c6e21772444d8b211a2bda6dd22909e5636328702395', 20, '2025-09-10 11:20:00', NULL),
+  (6, 6, 'module-6', 'd53dc9ef7c9541ed9b0d6fdc6b5934cc72f17ae772f0b6a3', 20, '2025-09-10 11:25:00', NULL),
+  (7, 7, 'module-7', '5dc3b2374a6c4122a24ed5c1214df6627de6f987c15bf863', 20, '2025-09-10 11:30:00', NULL),
+  (8, 8, 'module-8', '48b7dd2866d34844a3fe3f64f9c769cde2a8ac45d4f736da', 20, '2025-09-10 11:35:00', NULL),
+  (9, 9, 'module-9', '5fd03c1bc0de4e16943801953ce6584da32c9b9fe69d305d', 20, '2025-09-10 11:40:00', NULL),
+  (10, 10, 'module-10', '2b3bce5fdb794dd5bb55f1a6f633d8a67db6c19bc480c4aa', 20, '2025-09-10 11:45:00', NULL),
+  (11, 11, 'module-11', 'fa9f2787be334dcda2bb51d5f89ba76322d8dd1c10cbf42d', 20, '2025-09-10 11:50:00', NULL),
+  (12, 12, 'module-12', 'b890e45183644b4da75d54f8717feca280c77bb8ec6d4a5a', 20, '2025-09-10 11:55:00', NULL);
 
 INSERT INTO `groupes` (`id`, `code`, `nom`, `filiere`, `annee_scolaire`, `effectif`, `actif`, `created_at`, `updated_at`) VALUES
   (1, 'DEV-1', 'Developpement Digital 1A', 'Developpement Digital', '2025-2026', 24, 1, '2025-09-12 09:00:00', NULL),
@@ -823,6 +845,20 @@ INSERT INTO `formateur_modules` (`id`, `formateur_id`, `module_id`, `competence_
   (25, 5, 3, 3, '2025-09-22 10:48:00'),
   (26, 5, 4, 3, '2025-09-22 10:50:00');
 
+INSERT INTO `formateur_module_scores` (`id`, `formateur_id`, `module_id`, `score`, `last_updated_at`) VALUES
+  (1, 1, 1, 91.00, '2026-03-18 10:00:00'),
+  (2, 1, 2, 94.00, '2026-03-18 10:05:00'),
+  (3, 1, 11, 89.00, '2026-03-18 10:10:00'),
+  (4, 2, 3, 93.00, '2026-03-18 10:15:00'),
+  (5, 2, 4, 95.00, '2026-03-18 10:20:00'),
+  (6, 3, 5, 88.00, '2026-03-18 10:25:00'),
+  (7, 3, 6, 86.00, '2026-03-18 10:30:00'),
+  (8, 4, 7, 84.00, '2026-03-18 10:35:00'),
+  (9, 4, 8, 82.00, '2026-03-18 10:40:00'),
+  (10, 5, 9, 96.00, '2026-03-18 10:45:00'),
+  (11, 5, 10, 90.00, '2026-03-18 10:50:00'),
+  (12, 5, 12, 87.00, '2026-03-18 10:55:00');
+
 INSERT INTO `ai_scores` (`id`, `formateur_id`, `module_id`, `score`, `reason`, `created_at`) VALUES
   (1, 1, 1, 98.50, '{"competence":5,"experience":3,"semester_fit":"S1","notes":["integration solide","suivi constant du groupe"]}', '2026-03-11 10:03:00'),
   (2, 1, 2, 98.50, '{"competence":5,"experience":3,"semester_fit":"S2","notes":["React avance","bonne regularite"]}', '2026-03-12 10:06:00'),
@@ -862,44 +898,44 @@ INSERT INTO `evaluation_questions` (`id`, `questionnaire_id`, `question_text`, `
   (5, 1, 'Le formateur prepare-t-il des supports pedagogiques adaptes ?', 'yes/no', 2.00, '2025-09-01 08:09:00'),
   (6, 1, 'Commentaire complementaire sur la prestation du formateur.', 'text', 0.00, '2025-09-01 08:10:00');
 
-INSERT INTO `evaluation_answers` (`id`, `formateur_id`, `question_id`, `value`, `created_at`) VALUES
-  (1, 1, 1, '5', '2026-03-18 09:07:15'),
-  (2, 1, 2, '5', '2026-03-18 09:07:30'),
-  (3, 1, 3, '4', '2026-03-18 09:07:45'),
-  (4, 1, 4, 'yes', '2026-03-18 09:08:00'),
-  (5, 1, 5, 'yes', '2026-03-18 09:08:15'),
-  (6, 1, 6, 'Animation claire et tres bon suivi des ateliers techniques.', '2026-03-18 09:08:30'),
-  (7, 2, 1, '4', '2026-03-18 09:14:15'),
-  (8, 2, 2, '5', '2026-03-18 09:14:30'),
-  (9, 2, 3, '5', '2026-03-18 09:14:45'),
-  (10, 2, 4, 'yes', '2026-03-18 09:15:00'),
-  (11, 2, 5, 'yes', '2026-03-18 09:15:15'),
-  (12, 2, 6, 'Tres bonne posture pedagogique et supports bien structures.', '2026-03-18 09:15:30'),
-  (13, 3, 1, '4', '2026-03-18 09:21:15'),
-  (14, 3, 2, '4', '2026-03-18 09:21:30'),
-  (15, 3, 3, '4', '2026-03-18 09:21:45'),
-  (16, 3, 4, 'yes', '2026-03-18 09:22:00'),
-  (17, 3, 5, 'yes', '2026-03-18 09:22:15'),
-  (18, 3, 6, 'Bonne progression sur les mises en pratique data et IA.', '2026-03-18 09:22:30'),
-  (19, 4, 1, '4', '2026-03-18 09:28:15'),
-  (20, 4, 2, '4', '2026-03-18 09:28:30'),
-  (21, 4, 3, '3', '2026-03-18 09:28:45'),
-  (22, 4, 4, 'yes', '2026-03-18 09:29:00'),
-  (23, 4, 5, 'yes', '2026-03-18 09:29:15'),
-  (24, 4, 6, 'Interventions techniques solides et bonne gestion du laboratoire cloud.', '2026-03-18 09:29:30'),
-  (25, 5, 1, '5', '2026-03-18 09:35:15'),
-  (26, 5, 2, '4', '2026-03-18 09:35:30'),
-  (27, 5, 3, '5', '2026-03-18 09:35:45'),
-  (28, 5, 4, 'yes', '2026-03-18 09:36:00'),
-  (29, 5, 5, 'yes', '2026-03-18 09:36:15'),
-  (30, 5, 6, 'Excellent accompagnement humain et bonne coordination agile.', '2026-03-18 09:36:30');
+INSERT INTO `evaluation_answers` (`id`, `formateur_id`, `module_id`, `question_id`, `value`, `created_at`) VALUES
+  (1, 1, 1, 1, '5', '2026-03-18 09:07:15'),
+  (2, 1, 1, 2, '5', '2026-03-18 09:07:30'),
+  (3, 1, 1, 3, '4', '2026-03-18 09:07:45'),
+  (4, 1, 1, 4, 'yes', '2026-03-18 09:08:00'),
+  (5, 1, 1, 5, 'yes', '2026-03-18 09:08:15'),
+  (6, 1, 1, 6, 'Animation claire et tres bon suivi des ateliers techniques.', '2026-03-18 09:08:30'),
+  (7, 2, 3, 1, '4', '2026-03-18 09:14:15'),
+  (8, 2, 3, 2, '5', '2026-03-18 09:14:30'),
+  (9, 2, 3, 3, '5', '2026-03-18 09:14:45'),
+  (10, 2, 3, 4, 'yes', '2026-03-18 09:15:00'),
+  (11, 2, 3, 5, 'yes', '2026-03-18 09:15:15'),
+  (12, 2, 3, 6, 'Tres bonne posture pedagogique et supports bien structures.', '2026-03-18 09:15:30'),
+  (13, 3, 5, 1, '4', '2026-03-18 09:21:15'),
+  (14, 3, 5, 2, '4', '2026-03-18 09:21:30'),
+  (15, 3, 5, 3, '4', '2026-03-18 09:21:45'),
+  (16, 3, 5, 4, 'yes', '2026-03-18 09:22:00'),
+  (17, 3, 5, 5, 'yes', '2026-03-18 09:22:15'),
+  (18, 3, 5, 6, 'Bonne progression sur les mises en pratique data et IA.', '2026-03-18 09:22:30'),
+  (19, 4, 7, 1, '4', '2026-03-18 09:28:15'),
+  (20, 4, 7, 2, '4', '2026-03-18 09:28:30'),
+  (21, 4, 7, 3, '3', '2026-03-18 09:28:45'),
+  (22, 4, 7, 4, 'yes', '2026-03-18 09:29:00'),
+  (23, 4, 7, 5, 'yes', '2026-03-18 09:29:15'),
+  (24, 4, 7, 6, 'Interventions techniques solides et bonne gestion du laboratoire cloud.', '2026-03-18 09:29:30'),
+  (25, 5, 9, 1, '5', '2026-03-18 09:35:15'),
+  (26, 5, 9, 2, '4', '2026-03-18 09:35:30'),
+  (27, 5, 9, 3, '5', '2026-03-18 09:35:45'),
+  (28, 5, 9, 4, 'yes', '2026-03-18 09:36:00'),
+  (29, 5, 9, 5, 'yes', '2026-03-18 09:36:15'),
+  (30, 5, 9, 6, 'Excellent accompagnement humain et bonne coordination agile.', '2026-03-18 09:36:30');
 
-INSERT INTO `evaluation_scores` (`id`, `formateur_id`, `total_score`, `max_score`, `percentage`, `created_at`) VALUES
-  (1, 1, 63.00, 65.00, 96.92, '2026-03-18 09:10:00'),
-  (2, 2, 61.00, 65.00, 93.85, '2026-03-18 09:17:00'),
-  (3, 3, 56.00, 65.00, 86.15, '2026-03-18 09:24:00'),
-  (4, 4, 54.00, 65.00, 83.08, '2026-03-18 09:31:00'),
-  (5, 5, 62.00, 65.00, 95.38, '2026-03-18 09:38:00');
+INSERT INTO `evaluation_scores` (`id`, `formateur_id`, `module_id`, `total_score`, `max_score`, `percentage`, `created_at`) VALUES
+  (1, 1, 1, 63.00, 65.00, 96.92, '2026-03-18 09:10:00'),
+  (2, 2, 3, 61.00, 65.00, 93.85, '2026-03-18 09:17:00'),
+  (3, 3, 5, 56.00, 65.00, 86.15, '2026-03-18 09:24:00'),
+  (4, 4, 7, 54.00, 65.00, 83.08, '2026-03-18 09:31:00'),
+  (5, 5, 9, 62.00, 65.00, 95.38, '2026-03-18 09:38:00');
 
 UPDATE `planning_submissions`
 SET
