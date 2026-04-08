@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/../repositories/ModuleRepository.php';
 require_once __DIR__ . '/../core/HttpException.php';
+require_once __DIR__ . '/../core/JsonCache.php';
 
 class ModuleService
 {
@@ -17,6 +18,11 @@ class ModuleService
         return $this->modules->all($filters);
     }
 
+    public function paginate(int $page = 1, int $limit = 5, array $filters = []): array
+    {
+        return $this->modules->paginate($page, $limit, $filters);
+    }
+
     public function progressSummary(?int $annee = null): array
     {
         return $this->modules->progressSummary($annee);
@@ -25,6 +31,11 @@ class ModuleService
     public function progressList(array $filters = []): array
     {
         return $this->modules->progressList($filters);
+    }
+
+    public function progressPaginate(int $page = 1, int $limit = 5, array $filters = []): array
+    {
+        return $this->modules->progressPaginate($page, $limit, $filters);
     }
 
     public function find(int $id): array
@@ -44,6 +55,7 @@ class ModuleService
         }
 
         $id = $this->modules->create($data);
+        JsonCache::forgetByPrefix('dashboard-');
 
         return $this->find($id);
     }
@@ -57,6 +69,7 @@ class ModuleService
         }
 
         $this->modules->update($id, $data);
+        JsonCache::forgetByPrefix('dashboard-');
 
         return $this->find($id);
     }
@@ -70,5 +83,6 @@ class ModuleService
         }
 
         $this->modules->delete($id);
+        JsonCache::forgetByPrefix('dashboard-');
     }
 }

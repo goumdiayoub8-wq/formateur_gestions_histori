@@ -95,7 +95,7 @@ class AuthService
 
     public function register(string $name, string $email, string $password, int $roleId): array
     {
-        if (!in_array($roleId, [1, 2, 3], true)) {
+        if ($roleId !== 3) {
             throw new ValidationException('Le role selectionne est invalide.');
         }
 

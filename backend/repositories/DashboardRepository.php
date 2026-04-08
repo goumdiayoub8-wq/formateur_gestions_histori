@@ -467,6 +467,7 @@ class DashboardRepository
             'SELECT
                 m.filiere,
                 COUNT(*) AS module_count,
+                SUM(CASE WHEN m.has_efm = 1 THEN 1 ELSE 0 END) AS efm_count,
                 COALESCE(SUM(m.volume_horaire), 0) AS total_module_hours,
                 COALESCE(SUM(planned.hours), 0) AS planned_hours,
                 COALESCE(SUM(completed.hours), 0) AS completed_hours
@@ -499,6 +500,7 @@ class DashboardRepository
             return [
                 'filiere' => $row['filiere'] ?: 'Sans filiere',
                 'module_count' => intval($row['module_count'] ?? 0),
+                'efm_count' => intval($row['efm_count'] ?? 0),
                 'total_module_hours' => $totalModuleHours,
                 'planned_hours' => $plannedHours,
                 'completed_hours' => $completedHours,
@@ -1211,7 +1213,6 @@ class DashboardRepository
 
     public function countPlanningSessionsForContext(int $formateurId, int $moduleId, int $weekNumber, ?string $groupCode = null): int
     {
-        $validatedPlanningCondition = validatedPlanningSessionExistsCondition('s', 'ps', currentAcademicYear());
         $stmt = $this->db->prepare(
             'SELECT COUNT(*)
              FROM planning_sessions s
@@ -1219,7 +1220,7 @@ class DashboardRepository
              WHERE s.formateur_id = :formateur_id
                AND s.module_id = :module_id
                AND s.week_number = :week_number
-               AND ' . $validatedPlanningCondition . '
+               AND s.status <> "cancelled"
                AND (:group_code_any = "" OR COALESCE(g.code, "") = :group_code_exact)'
         );
         $stmt->execute([

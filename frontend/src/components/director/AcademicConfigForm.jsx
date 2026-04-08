@@ -5,19 +5,21 @@ import { validateAcademicConfig } from '../../utils/dateUtils';
 function Field({ label, value, onChange, error, icon: Icon }) {
   return (
     <label className="block">
-      <span className="mb-2 flex items-center gap-2 text-[14px] font-semibold text-[#334761]">
-        <Icon className="h-4 w-4 text-[#8e56ff]" />
+      <span className="mb-2 flex items-center gap-2 text-[14px] font-semibold text-slate-700 transition-colors duration-300 dark:text-slate-300">
+        <Icon className="h-4 w-4 text-violet-600 transition-colors duration-300 dark:text-violet-300" />
         {label}
       </span>
       <input
         type="date"
         value={value}
         onChange={onChange}
-        className={`h-12 w-full rounded-[16px] border bg-[#f7f9fd] px-4 text-[14px] text-[#223046] outline-none transition ${
-          error ? 'border-[#ffcccc]' : 'border-[#e7ecf5]'
+        className={`h-12 w-full rounded-[16px] border px-4 text-[14px] outline-none transition-colors duration-300 ${
+          error
+            ? 'border-rose-200 bg-rose-50/50 text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200'
+            : 'border-slate-200 bg-white text-slate-900 dark:border-white/10 dark:bg-slate-900/50 dark:text-slate-100'
         }`}
       />
-      {error ? <p className="mt-2 text-[13px] text-[#d14343]">{error}</p> : null}
+      {error ? <p className="mt-2 text-[13px] text-rose-600 transition-colors duration-300 dark:text-rose-300">{error}</p> : null}
     </label>
   );
 }
@@ -112,13 +114,13 @@ export default function AcademicConfigForm({ initialValues, saving, onSubmit }) 
         />
       </div>
 
-      {errors.date_order ? <p className="text-[14px] font-medium text-[#d14343]">{errors.date_order}</p> : null}
-      {errors.stage_period ? <p className="text-[14px] font-medium text-[#d14343]">{errors.stage_period}</p> : null}
+      {errors.date_order ? <p className="text-[14px] font-medium text-rose-600 transition-colors duration-300 dark:text-rose-300">{errors.date_order}</p> : null}
+      {errors.stage_period ? <p className="text-[14px] font-medium text-rose-600 transition-colors duration-300 dark:text-rose-300">{errors.stage_period}</p> : null}
 
       <button
         type="submit"
         disabled={saving}
-        className="inline-flex h-12 items-center justify-center gap-2 rounded-[16px] bg-gradient-to-r from-[#8b35ff] to-[#e21486] px-5 text-[14px] font-semibold text-white shadow-[0_18px_38px_rgba(139,53,255,0.24)] transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-70"
+        className="hover-action inline-flex h-12 items-center justify-center gap-2 rounded-[16px] bg-gradient-to-r from-violet-500 to-fuchsia-600 px-5 text-[14px] font-semibold text-white shadow-sm transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-70 dark:shadow-none"
       >
         <Save className="h-4 w-4" />
         {saving ? 'Enregistrement...' : 'Enregistrer la configuration'}

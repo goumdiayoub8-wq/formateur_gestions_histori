@@ -49,6 +49,10 @@ class PlanningController
         $taskTitle = InputValidator::string($payload, 'task_title', 'tache', false, 120) ?? 'Cours';
         $taskDescription = InputValidator::string($payload, 'task_description', 'description', false, 255);
 
+        if (($endTime === null || $endTime === '') && empty($payload['duration_minutes'])) {
+            throw new ValidationException('L heure de fin ou la duree du creneau est obligatoire.');
+        }
+
         return [
             'id' => InputValidator::integer($payload, 'id', 'id', false, 1),
             'formateur_id' => InputValidator::integer($payload, 'formateur_id', 'formateur', true, 1),
@@ -74,17 +78,34 @@ class PlanningController
 
     public function index(): void
     {
-        $rows = $this->planning->all([
+        $page = InputValidator::integer(
+            ['page' => requestQuery('page')],
+            'page',
+            'page',
+            false,
+            1
+        ) ?? 1;
+        $limit = InputValidator::integer(
+            ['limit' => requestQuery('limit')],
+            'limit',
+            'limit',
+            false,
+            1,
+            100
+        ) ?? 5;
+        $payload = $this->planning->paginate($page, $limit, [
             'formateur_id' => requestQuery('formateur_id'),
             'module_id' => requestQuery('module_id'),
             'semaine' => requestQuery('semaine') ?? requestQuery('week'),
+            'search' => trim((string) (requestQuery('search') ?? requestQuery('q') ?? '')),
         ]);
 
         jsonResponse([
-            'status' => 'success',
-            'data' => $rows,
-            'planning' => $rows,
-            'entries' => $rows,
+            'data' => $payload['data'],
+            'total_items' => $payload['total_items'],
+            'total_pages' => $payload['total_pages'],
+            'current_page' => $payload['current_page'],
+            'summary' => $payload['summary'] ?? null,
         ]);
     }
 
@@ -126,7 +147,16 @@ class PlanningController
     public function destroy(int $id): void
     {
         $this->planning->delete($id);
-        noContentResponse();
+        jsonResponse([
+            'status' => 'success',
+            'message' => 'Planning supprime.',
+            'data' => [
+                'id' => $id,
+            ],
+            'entry' => [
+                'id' => $id,
+            ],
+        ]);
     }
 
     public function getWeeklyPlanning(): void
@@ -138,12 +168,16 @@ class PlanningController
     {
         $week = InputValidator::integer(['week' => requestQuery('week') ?? requestQuery('semaine')], 'week', 'semaine', false, SYSTEM_WEEK_MIN, SYSTEM_WEEK_MAX) ?? currentAcademicWeek();
         $formateurId = InputValidator::integer(['formateur_id' => requestQuery('formateur_id')], 'formateur_id', 'formateur', false, 1);
-        $rows = $this->planning->sessions($week, $formateurId);
+        $page = InputValidator::integer(['page' => requestQuery('page')], 'page', 'page', false, 1) ?? 1;
+        $limit = InputValidator::integer(['limit' => requestQuery('limit')], 'limit', 'limit', false, 1, 100) ?? 5;
+        $payload = $this->planning->sessions($week, $formateurId, $page, $limit);
 
         jsonResponse([
-            'status' => 'success',
-            'data' => $rows,
-            'sessions' => $rows,
+            'data' => $payload['data'],
+            'total_items' => $payload['total_items'],
+            'total_pages' => $payload['total_pages'],
+            'current_page' => $payload['current_page'],
+            'summary' => $payload['summary'] ?? null,
         ]);
     }
 
@@ -177,7 +211,17 @@ class PlanningController
         $payload = readJsonBody();
         $id = InputValidator::integer($payload, 'id', 'id', true, 1);
         $this->planning->deleteSession($id);
-        noContentResponse();
+
+        jsonResponse([
+            'status' => 'success',
+            'message' => 'Creneau de planning supprime.',
+            'data' => [
+                'id' => $id,
+            ],
+            'session' => [
+                'id' => $id,
+            ],
+        ]);
     }
 
     public function updateSessionStatus(): void
@@ -221,11 +265,15 @@ class PlanningController
             $formateurId = intval($formateur['id']);
         }
 
-        $payload = $this->planning->trainerVisibility($formateurId, $week, $annee);
+        $page = InputValidator::integer(['page' => requestQuery('page')], 'page', 'page', false, 1) ?? 1;
+        $limit = InputValidator::integer(['limit' => requestQuery('limit')], 'limit', 'limit', false, 1, 100) ?? 5;
+        $payload = $this->planning->trainerVisibility($formateurId, $week, $annee, $page, $limit);
 
         jsonResponse([
-            'status' => 'success',
-            'data' => $payload,
+            'data' => $payload['data'] ?? ($payload['schedule'] ?? []),
+            'total_items' => $payload['total_items'] ?? count($payload['schedule'] ?? []),
+            'total_pages' => $payload['total_pages'] ?? 1,
+            'current_page' => $payload['current_page'] ?? 1,
             'visibility' => $payload,
         ]);
     }
@@ -235,11 +283,17 @@ class PlanningController
         requireRole([1, 2]);
         $week = InputValidator::integer(['week' => requestQuery('week') ?? requestQuery('semaine')], 'week', 'semaine', false, SYSTEM_WEEK_MIN, SYSTEM_WEEK_MAX) ?? currentAcademicWeek();
         $annee = InputValidator::integer(['annee' => requestQuery('annee')], 'annee', 'annee', false, 2000) ?? currentAcademicYear();
-        $payload = $this->planning->teamVisibility($week, $annee);
+        $page = InputValidator::integer(['page' => requestQuery('page')], 'page', 'page', false, 1) ?? 1;
+        $limit = InputValidator::integer(['limit' => requestQuery('limit')], 'limit', 'limit', false, 1, 100) ?? 5;
+        $payload = $this->planning->teamVisibility($week, $annee, $page, $limit);
 
         jsonResponse([
-            'status' => 'success',
-            'data' => $payload,
+            'data' => $payload['data'],
+            'total_items' => $payload['total_items'],
+            'total_pages' => $payload['total_pages'],
+            'current_page' => $payload['current_page'],
+            'summary' => $payload['summary'],
+            'week' => $payload['week'],
             'visibility' => $payload,
         ]);
     }
@@ -294,7 +348,9 @@ class PlanningController
     public function deleteWeeklyEntry(): void
     {
         $payload = readJsonBody();
-        if (!empty($payload['session']) || !empty($payload['kind']) && $payload['kind'] === 'session') {
+        $deleteSession = !empty($payload['session'])
+            || (!empty($payload['kind']) && $payload['kind'] === 'session');
+        if ($deleteSession) {
             $this->destroySession();
             return;
         }
@@ -308,13 +364,21 @@ class PlanningController
         $userId = requireRole([3]);
         $formateur = $this->formateurs->findByUserId($userId);
         $week = InputValidator::integer(['semaine' => requestQuery('week') ?? requestQuery('semaine')], 'semaine', 'semaine', false, SYSTEM_WEEK_MIN, SYSTEM_WEEK_MAX) ?? currentAcademicWeek();
+        $page = InputValidator::integer(['page' => requestQuery('page')], 'page', 'page', false, 1) ?? 1;
+        $limit = InputValidator::integer(['limit' => requestQuery('limit')], 'limit', 'limit', false, 1, 100) ?? 5;
         $overview = $this->dashboard->trainerOverview(intval($formateur['id']), $week, currentAcademicYear());
-        $rows = $overview['modules'];
+        $rows = is_array($overview['modules'] ?? null) ? $overview['modules'] : [];
+        $normalizedLimit = max(1, min(100, $limit));
+        $totalItems = count($rows);
+        $totalPages = max(1, (int) ceil($totalItems / $normalizedLimit));
+        $currentPage = min(max(1, $page), $totalPages);
+        $offset = ($currentPage - 1) * $normalizedLimit;
 
         jsonResponse([
-            'status' => 'success',
-            'data' => $rows,
-            'modules' => $rows,
+            'data' => array_slice($rows, $offset, $normalizedLimit),
+            'total_items' => $totalItems,
+            'total_pages' => $totalPages,
+            'current_page' => $currentPage,
         ]);
     }
 
@@ -369,6 +433,32 @@ class PlanningController
         ]);
     }
 
+    public function bulkReviewEntryDecisionRequest(): void
+    {
+        $payload = readJsonBody();
+        $status = InputValidator::oneOf($payload, 'status', 'statut', ['approved', 'rejected', 'validated']);
+        $note = InputValidator::string($payload, 'note', 'note', false, 255);
+        $ids = $payload['ids'] ?? [];
+
+        if (!is_array($ids) || $ids === []) {
+            throw new ValidationException('La liste des demandes est obligatoire.');
+        }
+
+        $sanitizedIds = array_values(array_unique(array_map('intval', array_filter($ids, static fn ($id) => intval($id) > 0))));
+        if ($sanitizedIds === []) {
+            throw new ValidationException('La liste des demandes est invalide.');
+        }
+
+        $updated = $this->dashboard->bulkReviewTrainerChangeRequests($sanitizedIds, $status, $note);
+
+        jsonResponse([
+            'status' => 'success',
+            'message' => 'Les demandes ont ete traitees.',
+            'data' => $updated,
+            'requests' => $updated['requests'] ?? [],
+        ]);
+    }
+
     private function readValidationStatus(array $payload): string
     {
         return InputValidator::oneOf($payload, 'status', 'statut', ['approved', 'rejected', 'revision']);
@@ -402,29 +492,33 @@ class PlanningController
 
     public function validationHistory(): void
     {
+        $page = InputValidator::integer(['page' => requestQuery('page')], 'page', 'page', false, 1) ?? 1;
         $limit = InputValidator::integer(['limit' => requestQuery('limit')], 'limit', 'limit', false, 1, 20) ?? 5;
-        $rows = $this->planning->validationHistory($limit);
+        $payload = $this->planning->validationHistoryPaginate($page, $limit);
 
         jsonResponse([
-            'status' => 'success',
-            'data' => $rows,
-            'history' => $rows,
+            'data' => $payload['data'],
+            'total_items' => $payload['total_items'],
+            'total_pages' => $payload['total_pages'],
+            'current_page' => $payload['current_page'],
         ]);
     }
 
     public function validationQueue(): void
     {
+        $page = InputValidator::integer(['page' => requestQuery('page')], 'page', 'page', false, 1) ?? 1;
+        $limit = InputValidator::integer(['limit' => requestQuery('limit')], 'limit', 'limit', false, 1, 20) ?? 5;
         $filters = [
             'q' => requestQuery('q'),
             'status' => requestQuery('status'),
         ];
-        $rows = $this->planning->validationQueue($filters);
+        $payload = $this->planning->validationQueuePaginate($page, $limit, $filters);
 
         jsonResponse([
-            'status' => 'success',
-            'data' => $rows,
-            'rows' => $rows,
-            'queue' => $rows,
+            'data' => $payload['data'],
+            'total_items' => $payload['total_items'],
+            'total_pages' => $payload['total_pages'],
+            'current_page' => $payload['current_page'],
         ]);
     }
 

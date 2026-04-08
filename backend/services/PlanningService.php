@@ -8,6 +8,7 @@ require_once __DIR__ . '/../repositories/AcademicConfigRepository.php';
 require_once __DIR__ . '/../services/ValidationService.php';
 require_once __DIR__ . '/../services/PlanningAlertService.php';
 require_once __DIR__ . '/../core/HttpException.php';
+require_once __DIR__ . '/../core/JsonCache.php';
 require_once __DIR__ . '/../core/helpers.php';
 
 class PlanningService
@@ -32,6 +33,7 @@ class PlanningService
     private const DEMANDE_STATUS_VALIDATED = 'validated';
     private const DEMANDE_STATUS_PLANNED = 'planned';
     private const DEMANDE_STATUS_REJECTED = 'rejected';
+    private const VALIDATION_CACHE_TTL_SECONDS = 10;
 
     private PDO $db;
     private PlanningRepository $planning;
@@ -82,6 +84,17 @@ class PlanningService
     private function safeFloat($value): float
     {
         return round(floatval($value ?? 0), 2);
+    }
+
+    private function clearDashboardCache(): void
+    {
+        JsonCache::forgetByPrefix('dashboard-');
+        JsonCache::forgetByPrefix('validation-');
+    }
+
+    private function validationCacheKey(string $segment, array $payload = []): string
+    {
+        return 'validation-' . $segment . ':' . sha1(json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     }
 
     private function validateSystemWeekNumber(int $week): int
@@ -136,6 +149,28 @@ class PlanningService
         }
 
         return strlen($normalized) === 5 ? $normalized . ':00' : $normalized;
+    }
+
+    private function normalizeValidationStatus(string $status): string
+    {
+        $normalized = strtolower(trim($status));
+
+        if (!in_array($normalized, ['approved', 'rejected', 'revision'], true)) {
+            throw new ValidationException('Le statut de validation est invalide.');
+        }
+
+        return $normalized;
+    }
+
+    private function normalizeDemandeReviewStatus(string $status): string
+    {
+        $normalized = strtolower(trim($status));
+
+        if (!in_array($normalized, [self::DEMANDE_STATUS_VALIDATED, self::DEMANDE_STATUS_REJECTED], true)) {
+            throw new ValidationException('Le statut de revue est invalide.');
+        }
+
+        return $normalized;
     }
 
     private function buildSessionDate(int $week, int $dayOfWeek): ?string
@@ -490,7 +525,7 @@ class PlanningService
                             'time_range' => $this->buildTimeRange($startTime, $endTime),
                             'duration_hours' => round($requiredSlots * self::GRID_SLOT_MINUTES / 60, 2),
                             'duration_label' => $this->formatHour(round($requiredSlots * self::GRID_SLOT_MINUTES / 60, 2)),
-                            'room_code' => 'SN-12',
+                            'room_code' => '',
                             'task_label' => $this->buildTaskLabel($module, $periods),
                             'status_label' => 'Distribue',
                             'accent' => $this->buildAccent(intval($module['id'] ?? 0), $index),
@@ -848,7 +883,7 @@ class PlanningService
         ];
     }
 
-    public function trainerVisibility(int $formateurId, ?int $week = null, ?int $annee = null): array
+    public function trainerVisibility(int $formateurId, ?int $week = null, ?int $annee = null, ?int $page = null, int $limit = 5): array
     {
         $resolvedWeek = $this->resolveSystemWeek($week);
         $resolvedYear = $annee ?? currentAcademicYear();
@@ -869,8 +904,25 @@ class PlanningService
             'periods' => $context['periods'],
         ];
         $alerts = $this->buildTrainerAlerts($alertContext);
+        $pagination = null;
+        $pagedSchedule = $context['schedule'];
 
-        return [
+        if ($page !== null) {
+            $normalizedLimit = max(1, min(100, $limit));
+            $totalItems = count($context['schedule']);
+            $totalPages = max(1, (int) ceil($totalItems / $normalizedLimit));
+            $currentPage = min(max(1, $page), $totalPages);
+            $offset = ($currentPage - 1) * $normalizedLimit;
+            $pagedSchedule = array_slice($context['schedule'], $offset, $normalizedLimit);
+            $pagination = [
+                'total_items' => $totalItems,
+                'total_pages' => $totalPages,
+                'current_page' => $currentPage,
+                'limit' => $normalizedLimit,
+            ];
+        }
+
+        $payload = [
             'profile' => [
                 'id' => intval($trainer['id'] ?? 0),
                 'nom' => $trainer['nom'] ?? '',
@@ -899,22 +951,32 @@ class PlanningService
             'sessions' => $context['sessions'],
             'distribution' => $context['distribution'],
             'grid' => $context['grid'],
-            'schedule' => $context['schedule'],
+            'schedule' => $pagedSchedule,
             'daily_totals' => $context['daily_totals'],
             'alerts' => $alerts,
         ];
+
+        if ($pagination !== null) {
+            $payload['data'] = $pagedSchedule;
+            $payload['total_items'] = $pagination['total_items'];
+            $payload['total_pages'] = $pagination['total_pages'];
+            $payload['current_page'] = $pagination['current_page'];
+        }
+
+        return $payload;
     }
 
-    public function teamVisibility(?int $week = null, ?int $annee = null): array
+    public function teamVisibility(?int $week = null, ?int $annee = null, int $page = 1, int $limit = 5): array
     {
         $resolvedWeek = $this->resolveSystemWeek($week);
         $resolvedYear = $annee ?? currentAcademicYear();
+        $pagination = $this->formateurs->paginate($page, $limit);
         $rows = [];
         $totalEntries = 0;
         $totalHours = 0.0;
         $activeGroups = [];
 
-        foreach ($this->formateurs->all() as $formateur) {
+        foreach ($pagination['data'] as $formateur) {
             $visibility = $this->trainerVisibility(intval($formateur['id']), $resolvedWeek, $resolvedYear);
             $rows[] = [
                 'id' => intval($formateur['id']),
@@ -951,11 +1013,15 @@ class PlanningService
         });
 
         return [
+            'data' => $rows,
+            'total_items' => intval($pagination['total_items'] ?? count($rows)),
+            'total_pages' => intval($pagination['total_pages'] ?? 1),
+            'current_page' => intval($pagination['current_page'] ?? 1),
             'summary' => [
                 'planned_courses' => $totalEntries,
                 'programmed_hours' => round($totalHours, 2),
                 'active_groups' => count($activeGroups),
-                'active_formateurs' => count($rows),
+                'active_formateurs' => intval($pagination['total_items'] ?? count($rows)),
             ],
             'week' => [
                 'number' => $resolvedWeek,
@@ -1103,7 +1169,37 @@ class PlanningService
 
     public function reviewDemandeRequest(int $requestId, string $status, ?string $note = null): array
     {
-        return $this->updateDemandeStatus($requestId, $status, $note);
+        $result = $this->updateDemandeStatus($requestId, $this->normalizeDemandeReviewStatus($status), $note);
+        $this->clearDashboardCache();
+
+        return $result;
+    }
+
+    public function bulkReviewDemandeRequests(array $requestIds, string $status, ?string $note = null): array
+    {
+        $normalizedStatus = $this->normalizeDemandeReviewStatus($status);
+        $sanitizedIds = array_values(array_unique(array_map('intval', array_filter($requestIds, static fn ($id): bool => intval($id) > 0))));
+
+        if ($sanitizedIds === []) {
+            throw new ValidationException('La liste des demandes est obligatoire.');
+        }
+
+        $result = $this->inTransaction(function () use ($sanitizedIds, $normalizedStatus, $note): array {
+            $results = [];
+
+            foreach ($sanitizedIds as $requestId) {
+                $results[] = $this->updateDemandeStatus($requestId, $normalizedStatus, $note);
+            }
+
+            return [
+                'updated_count' => count($results),
+                'status' => $normalizedStatus,
+                'requests' => $results,
+            ];
+        });
+        $this->clearDashboardCache();
+
+        return $result;
     }
 
     public function all(array $filters = []): array
@@ -1111,14 +1207,19 @@ class PlanningService
         return $this->planning->all($filters);
     }
 
+    public function paginate(int $page = 1, int $limit = 5, array $filters = []): array
+    {
+        return $this->planning->paginate($page, $limit, $filters);
+    }
+
     public function sessionOptions(int $formateurId, ?int $annee = null): array
     {
         return $this->planning->getSessionOptionsForTrainer($formateurId, $annee ?? currentAcademicYear());
     }
 
-    public function sessions(?int $week = null, ?int $formateurId = null): array
+    public function sessions(?int $week = null, ?int $formateurId = null, int $page = 1, int $limit = 5): array
     {
-        return $this->planning->listSessions([
+        return $this->planning->listSessionsPaginated($page, $limit, [
             'week_number' => $this->resolveSystemWeek($week),
             'formateur_id' => $formateurId,
         ]);
@@ -1146,6 +1247,7 @@ class PlanningService
         );
 
         $id = $this->planning->create($data);
+        $this->clearDashboardCache();
 
         return $this->find($id);
     }
@@ -1164,6 +1266,7 @@ class PlanningService
         );
 
         $this->planning->update($id, $data);
+        $this->clearDashboardCache();
 
         return $this->find($id);
     }
@@ -1179,12 +1282,22 @@ class PlanningService
                 intval($existing['semaine'])
             );
         });
+        $this->clearDashboardCache();
     }
 
     public function saveSession(array $data): array
     {
-        return $this->inTransaction(function () use ($data): array {
+        $result = $this->inTransaction(function () use ($data): array {
             $payload = $this->buildSessionPayload($data);
+
+            $roleId = currentUserRoleId();
+            $userId = currentUserId();
+            if ($roleId === 3) {
+                $formateur = $this->formateurs->findByUserId($userId);
+                if (!$formateur || intval($formateur['id']) !== intval($payload['formateur_id'])) {
+                    throw new ForbiddenException('Vous ne pouvez modifier que vos propres donnees.');
+                }
+            }
 
             $this->validation->validatePlanningSession(
                 $payload['formateur_id'],
@@ -1256,6 +1369,9 @@ class PlanningService
 
             return $created;
         });
+        $this->clearDashboardCache();
+
+        return $result;
     }
 
     public function deleteSession(int $id): void
@@ -1264,6 +1380,15 @@ class PlanningService
             $existing = $this->planning->findSession($id);
             if (!$existing) {
                 throw new NotFoundException('Le creneau de planning est introuvable.');
+            }
+
+            $roleId = currentUserRoleId();
+            $userId = currentUserId();
+            if ($roleId === 3) {
+                $formateur = $this->formateurs->findByUserId($userId);
+                if (!$formateur || intval($formateur['id']) !== intval($existing['formateur_id'])) {
+                    throw new ForbiddenException('Vous ne pouvez modifier que vos propres donnees.');
+                }
             }
 
             $this->planning->deleteSession($id);
@@ -1278,11 +1403,12 @@ class PlanningService
                 intval($existing['week_number'])
             );
         });
+        $this->clearDashboardCache();
     }
 
     public function completeSession(int $id, ?int $actorFormateurId = null, ?int $actorRoleId = null): array
     {
-        return $this->inTransaction(function () use ($id, $actorFormateurId, $actorRoleId): array {
+        $result = $this->inTransaction(function () use ($id, $actorFormateurId, $actorRoleId): array {
             $existing = $this->planning->findSession($id);
             if (!$existing) {
                 throw new NotFoundException('Le creneau de planning est introuvable.');
@@ -1331,6 +1457,9 @@ class PlanningService
 
             return $updated;
         });
+        $this->clearDashboardCache();
+
+        return $result;
     }
 
     public function weeklyStats(int $formateurId, ?int $week = null): array
@@ -1374,43 +1503,81 @@ class PlanningService
 
     public function validationSummary(): array
     {
-        return $this->planning->getValidationSummary();
+        return JsonCache::remember(
+            $this->validationCacheKey('summary'),
+            self::VALIDATION_CACHE_TTL_SECONDS,
+            fn (): array => $this->planning->getValidationSummary()
+        );
     }
 
     public function validationHistory(int $limit = 5): array
     {
-        return $this->planning->getValidationHistory($limit);
+        return JsonCache::remember(
+            $this->validationCacheKey('history', ['limit' => $limit]),
+            self::VALIDATION_CACHE_TTL_SECONDS,
+            fn (): array => $this->planning->getValidationHistory($limit)
+        );
+    }
+
+    public function validationHistoryPaginate(int $page = 1, int $limit = 5): array
+    {
+        return JsonCache::remember(
+            $this->validationCacheKey('history-page', ['page' => $page, 'limit' => $limit]),
+            self::VALIDATION_CACHE_TTL_SECONDS,
+            fn (): array => $this->planning->getValidationHistoryPaginated($page, $limit)
+        );
     }
 
     public function validationQueue(array $filters = []): array
     {
-        return $this->planning->getValidationQueue($filters);
+        return JsonCache::remember(
+            $this->validationCacheKey('queue', $filters),
+            self::VALIDATION_CACHE_TTL_SECONDS,
+            fn (): array => $this->planning->getValidationQueue($filters)
+        );
+    }
+
+    public function validationQueuePaginate(int $page = 1, int $limit = 5, array $filters = []): array
+    {
+        return JsonCache::remember(
+            $this->validationCacheKey('queue-page', ['page' => $page, 'limit' => $limit, 'filters' => $filters]),
+            self::VALIDATION_CACHE_TTL_SECONDS,
+            fn (): array => $this->planning->getValidationQueuePaginated($page, $limit, $filters)
+        );
     }
 
     public function submissionDetail(int $submissionId): array
     {
-        $submission = $this->planning->findSubmission($submissionId);
-        if (!$submission) {
-            throw new NotFoundException('La soumission de planning est introuvable.');
-        }
+        return JsonCache::remember(
+            $this->validationCacheKey('detail', ['submission_id' => $submissionId]),
+            self::VALIDATION_CACHE_TTL_SECONDS,
+            function () use ($submissionId): array {
+                $submission = $this->planning->findSubmission($submissionId);
+                if (!$submission) {
+                    throw new NotFoundException('La soumission de planning est introuvable.');
+                }
 
-        return [
-            'submission' => $submission,
-            'entries' => $this->planning->getSubmissionPlanningEntriesBySubmissionId($submissionId),
-        ];
+                return [
+                    'submission' => $submission,
+                    'entries' => $this->planning->getSubmissionPlanningEntriesBySubmissionId($submissionId),
+                ];
+            }
+        );
     }
 
     public function updateValidationStatus(int $submissionId, string $status, ?string $note, int $processedBy): array
     {
-        return $this->inTransaction(function () use ($submissionId, $status, $note, $processedBy): array {
+        $normalizedStatus = $this->normalizeValidationStatus($status);
+
+        $result = $this->inTransaction(function () use ($submissionId, $normalizedStatus, $note, $processedBy): array {
             $submission = $this->planning->findSubmission($submissionId);
             if (!$submission) {
                 throw new NotFoundException('La soumission de planning est introuvable.');
             }
 
             $this->planning->captureSubmissionSnapshotsByIds([$submissionId]);
-            $this->planning->updateSubmissionStatusByIds([$submissionId], $status, $processedBy, $note);
-            $this->planning->logSubmissionActivities([$submissionId], $status);
+            $this->planning->updateSubmissionStatusByIds([$submissionId], $normalizedStatus, $processedBy, $note);
+            $this->planning->logSubmissionActivities([$submissionId], $normalizedStatus);
 
             $updated = $this->planning->findSubmission($submissionId);
 
@@ -1420,19 +1587,33 @@ class PlanningService
 
             return $updated;
         });
+        $this->clearDashboardCache();
+
+        return $result;
     }
 
     public function bulkUpdateValidationStatus(array $submissionIds, string $status, ?string $note, int $processedBy): array
     {
-        return $this->inTransaction(function () use ($submissionIds, $status, $note, $processedBy): array {
-            $this->planning->captureSubmissionSnapshotsByIds($submissionIds);
-            $updatedCount = $this->planning->updateSubmissionStatusByIds($submissionIds, $status, $processedBy, $note);
-            $this->planning->logSubmissionActivities($submissionIds, $status);
+        $normalizedStatus = $this->normalizeValidationStatus($status);
+        $sanitizedIds = array_values(array_unique(array_map('intval', array_filter($submissionIds, static fn ($id): bool => intval($id) > 0))));
+
+        if ($sanitizedIds === []) {
+            throw new ValidationException('La liste des soumissions visibles est invalide.');
+        }
+
+        $result = $this->inTransaction(function () use ($sanitizedIds, $normalizedStatus, $note, $processedBy): array {
+            $this->planning->captureSubmissionSnapshotsByIds($sanitizedIds);
+            $updatedCount = $this->planning->updateSubmissionStatusByIds($sanitizedIds, $normalizedStatus, $processedBy, $note);
+            $this->planning->logSubmissionActivities($sanitizedIds, $normalizedStatus);
 
             return [
                 'updated_count' => $updatedCount,
-                'status' => $status,
+                'status' => $normalizedStatus,
+                'submission_ids' => $sanitizedIds,
             ];
         });
+        $this->clearDashboardCache();
+
+        return $result;
     }
 }

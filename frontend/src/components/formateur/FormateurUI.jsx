@@ -28,7 +28,7 @@ export function FormateurSectionHeader({ title, description, action }) {
 
 export function FormateurStatCard({ icon: Icon, iconClassName, label, value, helper, progress, progressClassName }) {
   return (
-    <FormateurPanel className="p-5">
+    <FormateurPanel className="hover-card p-5">
       <div className={cn('mb-5 inline-flex h-13 w-13 items-center justify-center rounded-[18px]', iconClassName)}>
         <Icon className="h-5 w-5" />
       </div>
@@ -36,9 +36,9 @@ export function FormateurStatCard({ icon: Icon, iconClassName, label, value, hel
       <p className="theme-text-primary mt-3 text-[22px] font-bold tracking-tight">{value}</p>
       {helper ? <p className="theme-text-muted mt-2 text-[14px]">{helper}</p> : null}
       {typeof progress === 'number' ? (
-        <div className="mt-4 h-2 rounded-full bg-[var(--color-border)]">
+        <div className="mt-4 h-2 rounded-full bg-slate-200 transition-colors duration-300 dark:bg-white/10">
           <div
-            className={cn('h-2 rounded-full bg-[#1fd162]', progressClassName)}
+            className={cn('h-2 rounded-full bg-emerald-500 dark:bg-emerald-400', progressClassName)}
             style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
           />
         </div>
@@ -49,7 +49,7 @@ export function FormateurStatCard({ icon: Icon, iconClassName, label, value, hel
 
 export function FormateurSemesterBadge({ value }) {
   return (
-    <span className="inline-flex items-center rounded-full bg-[#edf3ff] px-3 py-1 text-[12px] font-bold text-[#2b63ff]">
+    <span className="hover-badge inline-flex items-center rounded-full bg-blue-500/10 px-3 py-1 text-[12px] font-bold text-blue-700 transition-colors duration-300 dark:bg-blue-400/20 dark:text-blue-200">
       {value}
     </span>
   );
@@ -58,17 +58,17 @@ export function FormateurSemesterBadge({ value }) {
 export function FormateurMiniProgress({ value, tone = 'violet' }) {
   const toneClassName =
     tone === 'green'
-      ? 'bg-[#16c55b]'
+      ? 'bg-emerald-500 dark:bg-emerald-400'
       : tone === 'blue'
-        ? 'bg-[#1f57ff]'
-        : 'bg-gradient-to-r from-[#6c4dff] to-[#d72cff]';
+        ? 'bg-blue-600 dark:bg-blue-400'
+        : 'bg-gradient-to-r from-violet-500 to-fuchsia-600';
 
   return (
     <div className="flex items-center gap-3">
-      <div className="h-2.5 w-24 overflow-hidden rounded-full bg-[#eceff5]">
+      <div className="h-2.5 w-24 overflow-hidden rounded-full bg-slate-200 transition-colors duration-300 dark:bg-white/10">
         <div className={cn('h-full rounded-full', toneClassName)} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
       </div>
-      <span className="text-[14px] font-semibold text-[#a020f0]">{Math.round(value)}%</span>
+      <span className="text-[14px] font-semibold text-violet-700 transition-colors duration-300 dark:text-violet-300">{Math.round(value)}%</span>
     </div>
   );
 }
@@ -86,19 +86,19 @@ export function FormateurAlertCard({ alert }) {
   const tone = alert?.type || 'info';
   const toneClassName =
     tone === 'error'
-      ? 'border-[#ffd8d8] bg-[#fff5f5] text-[#cc4c4c]'
+      ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200'
       : tone === 'warning'
-        ? 'border-[#ffe0af] bg-[#fff8ea] text-[#b87812]'
-        : 'border-[#dce8ff] bg-[#f4f8ff] text-[#3964b2]';
+        ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200'
+        : 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-400/20 dark:bg-blue-500/10 dark:text-blue-200';
   const badgeClassName =
     tone === 'error'
-      ? 'bg-[#ffeded] text-[#d64545]'
+      ? 'bg-rose-500/10 text-rose-700 dark:bg-rose-400/20 dark:text-rose-200'
       : tone === 'warning'
-        ? 'bg-[#fff1d8] text-[#c58213]'
-        : 'bg-[#e9f1ff] text-[#315cf0]';
+        ? 'bg-amber-500/10 text-amber-700 dark:bg-amber-400/20 dark:text-amber-200'
+        : 'bg-blue-500/10 text-blue-700 dark:bg-blue-400/20 dark:text-blue-200';
 
   return (
-    <div className={cn('rounded-[22px] border px-5 py-4', toneClassName)}>
+    <div className={cn('hover-row rounded-[22px] border px-5 py-4', toneClassName)}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-[15px] font-bold tracking-tight">{alert?.message || 'Alerte'}</p>

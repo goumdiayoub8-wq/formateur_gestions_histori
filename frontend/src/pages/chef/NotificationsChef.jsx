@@ -30,14 +30,14 @@ function formatNotificationDate(value) {
 
 function getToneClasses(severity) {
   if (severity === 'danger') {
-    return 'border-[#ffd8d8] bg-[#fff4f4] text-[#d14d4d]';
+    return 'theme-status-danger';
   }
 
   if (severity === 'warning') {
-    return 'border-[#f5dfb2] bg-[#fff8ea] text-[#b47b12]';
+    return 'theme-status-warning';
   }
 
-  return 'border-[#d8e5ff] bg-[#f4f8ff] text-[#496db2]';
+  return 'theme-status-info';
 }
 
 function isPendingChangeNotification(item) {
@@ -117,15 +117,15 @@ export default function NotificationsChef() {
   if (loading) {
     return (
       <div className="flex min-h-[55vh] items-center justify-center">
-        <Spinner className="h-10 w-10 border-slate-300 border-t-[#355e89]" />
+        <Spinner className="h-10 w-10 border-[var(--color-border-strong)] border-t-[var(--color-primary)]" />
       </div>
     );
   }
 
   if (error) {
     return (
-      <Card className="rounded-[18px] border-[#ffd6d6] bg-[#fff4f4] p-5">
-        <p className="text-sm font-semibold text-[#d34d4d]">{error}</p>
+      <Card className="theme-status-danger rounded-[18px] p-5">
+        <p className="text-sm font-semibold">{error}</p>
       </Card>
     );
   }
@@ -158,6 +158,7 @@ export default function NotificationsChef() {
 
       <div className="grid gap-4 md:grid-cols-3">
         <MetricCard
+          className="hover-card"
           icon={BellRing}
           label="Notifications actives"
           value={count}
@@ -165,6 +166,7 @@ export default function NotificationsChef() {
           tone="brand"
         />
         <MetricCard
+          className="hover-card"
           icon={BellRing}
           label="Demandes de changement"
           value={byType.change}
@@ -172,6 +174,7 @@ export default function NotificationsChef() {
           tone="amber"
         />
         <MetricCard
+          className="hover-card"
           icon={BellRing}
           label="Confirmations & validations"
           value={byType.validation}
@@ -203,39 +206,39 @@ export default function NotificationsChef() {
                     navigate(item.target_path, { state: item.target_state || undefined });
                   }
                 }}
-                className={`rounded-[18px] border px-4 py-4 shadow-[0_6px_18px_rgba(34,77,132,0.04)] ${getToneClasses(item.severity)} ${item.target_path ? 'cursor-pointer transition hover:-translate-y-0.5' : ''}`}
+                className={`hover-row rounded-[18px] border px-4 py-4 shadow-[0_6px_18px_rgba(34,77,132,0.04)] ${getToneClasses(item.severity)} ${item.target_path ? 'cursor-pointer transition hover:-translate-y-0.5' : ''}`}
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="chef-notification-title text-[15px] font-semibold leading-6">{item.title}</p>
                     <p className="mt-1 text-[14px] leading-6 opacity-90">{item.message}</p>
                   </div>
-                  <span className="rounded-full bg-white/70 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]">
+                  <span className="theme-card rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]">
                     {item.alert_type === 'planning_change' ? 'Changement' : 'Validation'}
                   </span>
                 </div>
 
                 <div className="mt-3 flex flex-wrap gap-2">
                   {item.metadata?.trainer_name ? (
-                    <span className="rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold text-[#415a7c]">
+                    <span className="theme-card theme-text-soft rounded-full px-3 py-1 text-[11px] font-semibold">
                       {item.metadata.trainer_name}
                     </span>
                   ) : null}
                   {item.metadata?.module_code ? (
-                    <span className="rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold text-[#415a7c]">
+                    <span className="theme-card hover-badge theme-text-soft rounded-full px-3 py-1 text-[11px] font-semibold" data-tooltip={item.message?.match(/module\s+(.+?)\s+est/)?.[1] || 'Module code'}>
                       {item.metadata.module_code}
                     </span>
                   ) : null}
                   {item.metadata?.week_number ? (
-                    <span className="rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold text-[#415a7c]">
+                    <span className="theme-card theme-text-soft rounded-full px-3 py-1 text-[11px] font-semibold">
                       Semaine {item.metadata.week_number}
                     </span>
                   ) : null}
                 </div>
 
                 {item.details && item.details !== item.message ? (
-                  <div className="mt-4 rounded-[16px] border border-white/70 bg-white/70 px-4 py-3 text-[#425875]">
-                    <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.14em] text-[#7e91ab]">
+                  <div className="theme-card theme-text-soft mt-4 rounded-[16px] border px-4 py-3">
+                    <div className="theme-text-muted flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.14em]">
                       <MessageSquareText className="h-4 w-4" />
                       Message du formateur
                     </div>
@@ -245,11 +248,11 @@ export default function NotificationsChef() {
 
                 {isPendingChangeNotification(item) ? (
                   <div
-                    className="mt-4 rounded-[16px] border border-white/70 bg-white/65 p-4"
+                    className="theme-card mt-4 rounded-[16px] border p-4"
                     onClick={(event) => event.stopPropagation()}
                   >
                     <label className="block">
-                      <span className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[#7e91ab]">
+                      <span className="theme-text-muted text-[12px] font-semibold uppercase tracking-[0.14em]">
                         Reponse au formateur
                       </span>
                       <textarea
@@ -262,7 +265,8 @@ export default function NotificationsChef() {
                         }
                         rows={3}
                         placeholder="Ajoutez une reponse claire pour le formateur..."
-                        className="chef-notification-response-input theme-focus-ring mt-2 w-full rounded-[14px] border border-[#d7e1f0] bg-white px-3 py-3 text-sm text-[#314762] outline-none transition placeholder:text-[#a0aec1] focus:border-[#8ab3ea] focus:ring-2 focus:ring-[#dbeafe]"
+                        data-testid="chef-notification-response-input"
+                        className="chef-notification-response-input theme-input theme-focus-ring mt-2 w-full rounded-[14px] border px-3 py-3 text-sm outline-none transition placeholder:text-[var(--color-text-subtle)] focus:ring-2"
                       />
                     </label>
 
@@ -271,7 +275,9 @@ export default function NotificationsChef() {
                         type="button"
                         disabled={actionLoadingId === item.id}
                         onClick={() => handleReview(item, 'validated')}
-                        className="inline-flex items-center gap-2 rounded-[14px] border border-[#cfe7d3] bg-[#effbf3] px-4 py-2.5 text-sm font-semibold text-[#217a4d] transition hover:bg-[#e4f6ea] disabled:cursor-not-allowed disabled:opacity-60"
+                        data-testid="chef-notification-approve"
+                        className="theme-status-success hover-icon-btn inline-flex items-center gap-2 rounded-[14px] border px-4 py-2.5 text-sm font-semibold transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
+                        data-tooltip="Accepter le changement"
                       >
                         <CheckCheck className="h-4 w-4" />
                         Valider
@@ -280,7 +286,9 @@ export default function NotificationsChef() {
                         type="button"
                         disabled={actionLoadingId === item.id}
                         onClick={() => handleReview(item, 'rejected')}
-                        className="inline-flex items-center gap-2 rounded-[14px] border border-[#f4ddb6] bg-[#fff8ea] px-4 py-2.5 text-sm font-semibold text-[#b7791f] transition hover:bg-[#fff2d6] disabled:cursor-not-allowed disabled:opacity-60"
+                        data-testid="chef-notification-reject"
+                        className="theme-status-warning hover-icon-btn inline-flex items-center gap-2 rounded-[14px] border px-4 py-2.5 text-sm font-semibold transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
+                        data-tooltip="Refuser le changement"
                       >
                         <XCircle className="h-4 w-4" />
                         Refuser

@@ -4,6 +4,7 @@ require_once __DIR__ . '/../repositories/AffectationRepository.php';
 require_once __DIR__ . '/../repositories/SmartAssignmentRepository.php';
 require_once __DIR__ . '/../services/ValidationService.php';
 require_once __DIR__ . '/../core/HttpException.php';
+require_once __DIR__ . '/../core/JsonCache.php';
 
 class AffectationService
 {
@@ -23,6 +24,11 @@ class AffectationService
     public function all(array $filters = []): array
     {
         return $this->affectations->all($filters);
+    }
+
+    public function paginate(int $page = 1, int $limit = 5, array $filters = []): array
+    {
+        return $this->affectations->paginate($page, $limit, $filters);
     }
 
     public function create(array $data): array
@@ -48,6 +54,7 @@ class AffectationService
             }
 
             $this->db->commit();
+            JsonCache::forgetByPrefix('dashboard-');
 
             return $created;
         } catch (Throwable $exception) {
@@ -74,6 +81,7 @@ class AffectationService
             $this->smartAssignments->clearScoreCacheForTrainer(intval($affectation['formateur_id']));
             $this->smartAssignments->clearScoreCacheForModule(intval($affectation['module_id']));
             $this->db->commit();
+            JsonCache::forgetByPrefix('dashboard-');
         } catch (Throwable $exception) {
             if ($this->db->inTransaction()) {
                 $this->db->rollBack();

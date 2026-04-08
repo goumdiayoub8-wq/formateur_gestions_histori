@@ -22,6 +22,7 @@ if ($method === 'GET' && $action === 'progress-list') {
 }
 
 if ($method === 'GET' && $id === null) {
+    requireAuth();
     $controller->index();
     return;
 }
@@ -33,6 +34,7 @@ if ($method === 'POST' && $id === null) {
 }
 
 if ($id !== null && $method === 'GET') {
+    requireAuth();
     $controller->show($id);
     return;
 }

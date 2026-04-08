@@ -20,6 +20,7 @@ export default function QuestionnaireNavigation({
         type="button"
         onClick={onBack}
         disabled={currentQuestionIndex === 0 || submitting}
+        aria-label="Question precedente"
         className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-55"
       >
         <ArrowLeft className="h-4 w-4" />
@@ -32,7 +33,8 @@ export default function QuestionnaireNavigation({
         whileHover={submitting ? undefined : { y: -2, scale: 1.01 }}
         whileTap={submitting ? undefined : { scale: 0.99 }}
         disabled={!isCurrentStepValid || submitting}
-        className="inline-flex items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,#2563eb,#06b6d4)] px-6 py-3 text-sm font-semibold text-white shadow-[0_16px_36px_rgba(37,99,235,0.28)] disabled:cursor-not-allowed disabled:opacity-60"
+        aria-label={isLastQuestion ? 'Envoyer le questionnaire' : 'Question suivante'}
+        className="inline-flex items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,#2563eb,#06b6d4)] px-6 py-3 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(37,99,235,0.22)] disabled:cursor-not-allowed disabled:opacity-60"
       >
         {submitting ? <Spinner className="h-4 w-4 border-white/40 border-t-white" /> : null}
         {isLastQuestion ? (

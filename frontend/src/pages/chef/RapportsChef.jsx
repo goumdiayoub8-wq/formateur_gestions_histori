@@ -1,8 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Download, FileText } from 'lucide-react';
 import ReportService from '../../services/reportService';
-import FormateurService from '../../services/formateurService';
-import ModuleService from '../../services/moduleService';
 import DashboardService from '../../services/dashboardService';
 import Spinner from '../../components/ui/Spinner';
 
@@ -65,14 +63,14 @@ function groupReportsByType(reports) {
 
 function ExportCard({ icon: Icon, iconClassName, title, description, actions = [] }) {
   return (
-    <div className="rounded-[20px] border border-[#dbe5f2] bg-white px-6 py-6 shadow-[0_2px_6px_rgba(62,90,135,0.06)]">
+    <div className="hover-card rounded-[20px] border border-[var(--color-border)] bg-[var(--color-surface-strong)] px-6 py-6 shadow-sm">
       <div className="flex items-start gap-4">
         <div className={`flex h-12 w-12 items-center justify-center rounded-[16px] ${iconClassName}`}>
           <Icon className="h-6 w-6 text-white" />
         </div>
         <div>
-          <p className="text-[17px] font-semibold text-[#1c2436]">{title}</p>
-          <p className="mt-1 text-[15px] text-[#717f95]">{description}</p>
+          <p className="text-[17px] font-semibold text-[var(--color-text-soft)]">{title}</p>
+          <p className="mt-1 text-[15px] text-[var(--color-text-muted)]">{description}</p>
         </div>
       </div>
 
@@ -96,8 +94,6 @@ function ExportCard({ icon: Icon, iconClassName, title, description, actions = [
 
 export default function RapportsChef() {
   const [reports, setReports] = useState([]);
-  const [formateurs, setFormateurs] = useState([]);
-  const [modules, setModules] = useState([]);
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
   const [generatingKey, setGeneratingKey] = useState('');
@@ -115,16 +111,12 @@ export default function RapportsChef() {
     try {
       setLoading(true);
       setError('');
-      const [reportsResponse, formateursResponse, modulesResponse, dashboardResponse] = await Promise.all([
+      const [reportsResponse, dashboardResponse] = await Promise.all([
         ReportService.getRecent(),
-        FormateurService.list(),
-        ModuleService.list(),
         DashboardService.getStats(),
       ]);
 
       setReports(Array.isArray(reportsResponse) ? reportsResponse : []);
-      setFormateurs(Array.isArray(formateursResponse) ? formateursResponse : []);
-      setModules(Array.isArray(modulesResponse) ? modulesResponse : []);
       setDashboard(dashboardResponse || null);
     } catch (loadError) {
       setError(loadError?.message || 'Impossible de charger les rapports.');
@@ -200,11 +192,11 @@ export default function RapportsChef() {
 
   const summary = useMemo(() => {
     return {
-      totalFormateurs: formateurs.length,
-      totalModules: modules.length,
+      totalFormateurs: Number(dashboard?.overview?.total_formateurs || 0),
+      totalModules: Number(dashboard?.overview?.total_modules || 0),
       totalHeures: dashboard?.overview?.total_module_hours || 0,
     };
-  }, [dashboard, formateurs.length, modules.length]);
+  }, [dashboard]);
 
   const visibleReports = groupReportsByType(
     reports.filter((report) => visibleReportTypes.includes(report.type)),
@@ -222,11 +214,11 @@ export default function RapportsChef() {
     <div className="chef-reports-page min-h-[calc(100vh-81px)] bg-[#d9e9ff] px-5 py-5 lg:px-5">
       <div className="space-y-7">
         <div>
-          <h1 className="text-[26px] font-bold tracking-tight text-[#3550f2]">Rapports</h1>
-          <p className="mt-1 text-[16px] text-[#6f7f95]">Generer et exporter des rapports</p>
+          <h1 className="text-[26px] font-bold tracking-tight text-[var(--color-primary)]">Rapports</h1>
+          <p className="mt-1 text-[16px] text-[var(--color-text-muted)]">Generer et exporter des rapports</p>
         </div>
 
-        <div className="rounded-[20px] border border-[#dbe5f2] bg-white px-5 py-4 text-[14px] text-[#62748f] shadow-[0_2px_6px_rgba(62,90,135,0.06)]">
+        <div className="rounded-[20px] border border-[var(--color-border)] bg-[var(--color-surface-strong)] px-5 py-4 text-[14px] text-[var(--color-text-muted)] shadow-sm">
           Les exports PDF et Excel sont disponibles pour les rapports opérationnels du pôle.
         </div>
 
@@ -355,8 +347,8 @@ export default function RapportsChef() {
           </div>
         ) : null}
 
-        <div className="rounded-[20px] border border-[#dbe5f2] bg-white px-6 py-5 shadow-[0_2px_6px_rgba(62,90,135,0.06)]">
-          <h2 className="text-[16px] font-semibold text-[#1d2435]">Resume</h2>
+        <div className="hover-card rounded-[20px] border border-[var(--color-border)] bg-[var(--color-surface-strong)] px-6 py-5 shadow-sm">
+          <h2 className="text-[16px] font-semibold text-[var(--color-text-soft)]">Resume</h2>
 
           <div className="mt-8 grid gap-8 lg:grid-cols-3">
             <div>
@@ -368,27 +360,27 @@ export default function RapportsChef() {
               <p className="chef-report-summary-value mt-2 text-[34px] font-bold tracking-tight text-[#101721]">{summary.totalModules}</p>
             </div>
             <div>
-              <p className="text-[15px] text-[#8a96aa]">Total Heures</p>
-              <p className="chef-report-summary-value mt-2 text-[34px] font-bold tracking-tight text-[#101721]">{formatHour(summary.totalHeures)}</p>
+              <p className="text-[15px] text-[var(--color-text-muted)]">Total Heures</p>
+              <p className="chef-report-summary-value mt-2 text-[34px] font-bold tracking-tight text-[var(--color-text-soft)]">{formatHour(summary.totalHeures)}</p>
             </div>
           </div>
         </div>
 
-        <div className="rounded-[20px] border border-[#dbe5f2] bg-white px-6 py-5 shadow-[0_2px_6px_rgba(62,90,135,0.06)]">
-          <h2 className="text-[16px] font-semibold text-[#1d2435]">Rapports Recents</h2>
+        <div className="hover-card rounded-[20px] border border-[var(--color-border)] bg-[var(--color-surface-strong)] px-6 py-5 shadow-sm">
+          <h2 className="text-[16px] font-semibold text-[var(--color-text-soft)]">Rapports Recents</h2>
 
           <div className="mt-6 space-y-4">
             {visibleReports.length ? (
               visibleReports.map((reportGroup) => (
                 <div
                   key={reportGroup.key}
-                  className="flex items-center justify-between gap-4 rounded-[14px] border border-[#e2e8f2] bg-white px-4 py-4"
+                  className="hover-row flex items-center justify-between gap-4 rounded-[14px] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-4"
                 >
                   <div className="min-w-0">
-                    <p className="truncate text-[17px] font-semibold text-[#1b2232]">
+                    <p className="truncate text-[17px] font-semibold text-[var(--color-text-soft)]">
                       {reportGroup.title}
                     </p>
-                    <p className="mt-1 text-[15px] text-[#7c879b]">{formatReportDate(reportGroup.created_at)}</p>
+                    <p className="mt-1 text-[15px] text-[var(--color-text-muted)]">{formatReportDate(reportGroup.created_at)}</p>
                   </div>
                   <div className="flex items-center gap-3">
                     {reportGroup.formats.pdf ? (
@@ -400,8 +392,8 @@ export default function RapportsChef() {
                           type="button"
                           onClick={() => handleDownload(reportGroup.formats.pdf)}
                           disabled={generatingKey === `download-${reportGroup.formats.pdf.id}`}
-                          className="report-download-button inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] transition disabled:opacity-60"
-                          title="Telecharger PDF"
+                          className="report-download-button hover-icon-btn inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] transition disabled:opacity-60"
+                          data-tooltip="Telecharger PDF"
                         >
                           <Download className="h-5 w-5" />
                         </button>
@@ -416,8 +408,8 @@ export default function RapportsChef() {
                           type="button"
                           onClick={() => handleDownload(reportGroup.formats.xlsx)}
                           disabled={generatingKey === `download-${reportGroup.formats.xlsx.id}`}
-                          className="report-download-button inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] transition disabled:opacity-60"
-                          title="Telecharger Excel"
+                          className="report-download-button hover-icon-btn inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] transition disabled:opacity-60"
+                          data-tooltip="Telecharger Excel"
                         >
                           <Download className="h-5 w-5" />
                         </button>

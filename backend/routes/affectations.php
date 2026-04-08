@@ -9,6 +9,7 @@ $method = requestMethod();
 $id = !empty($segments[0]) ? intval($segments[0]) : null;
 
 if ($method === 'GET' && $id === null) {
+    requireAuth();
     $controller->index();
     return;
 }

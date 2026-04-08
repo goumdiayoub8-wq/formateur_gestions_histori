@@ -18,11 +18,26 @@ const FormateurService = {
     );
   },
 
-  get(id) {
-    return apiRequest({
-      url: `${FORMATEURS_BASE}/${id}`,
-      method: 'get',
-    });
+  listPaginated({ page = 1, limit = 5, search = '' } = {}) {
+    const normalizedSearch = search.trim();
+
+    return apiRequest(
+      {
+        url: FORMATEURS_BASE,
+        method: 'get',
+        params: {
+          page,
+          limit,
+          ...(normalizedSearch ? { search: normalizedSearch } : {}),
+        },
+      },
+      {
+        raw: true,
+        dedupeKey: `formateurs:paginated:${page}:${limit}:${normalizedSearch}`,
+        cacheKey: `formateurs:paginated:${page}:${limit}:${normalizedSearch}`,
+        cacheTtlMs: 10000,
+      },
+    );
   },
 
   create(payload) {
@@ -66,27 +81,6 @@ const FormateurService = {
     });
   },
 
-  getHours(id) {
-    return apiRequest({
-      url: `${FORMATEURS_BASE}/${id}/hours`,
-      method: 'get',
-    });
-  },
-
-  getProfil() {
-    return apiRequest(
-      {
-        url: `${FORMATEUR_BASE}?action=profil`,
-        method: 'get',
-      },
-      {
-        dedupeKey: 'formateur:profil',
-        cacheKey: 'formateur:profil',
-        cacheTtlMs: 30000,
-      },
-    );
-  },
-
   getNotifications() {
     return apiRequest(
       {
@@ -115,18 +109,60 @@ const FormateurService = {
     );
   },
 
-  getModulesQuestionnaires() {
+  getModulePreferences() {
     return apiRequest(
       {
-        url: `${FORMATEUR_BASE}/modules-questionnaires`,
+        url: `${FORMATEUR_BASE}?action=module-preferences`,
         method: 'get',
       },
       {
-        dedupeKey: 'formateur:modules-questionnaires',
-        cacheKey: 'formateur:modules-questionnaires',
-        cacheTtlMs: 30000,
+        dedupeKey: 'formateur:module-preferences',
+        cacheKey: 'formateur:module-preferences',
+        cacheTtlMs: 15000,
       },
     );
+  },
+
+  submitModulePreferences(module_ids) {
+    return apiRequest({
+      url: `${FORMATEUR_BASE}?action=module-preferences`,
+      method: 'post',
+      data: { module_ids },
+    }).then((response) => {
+      invalidateApiCache('formateur:module-preferences');
+      invalidateApiCache('formateur:notifications');
+      invalidateApiCache('dashboard:');
+      invalidateApiCache('formateurs:');
+      return response;
+    });
+  },
+
+  getModulePreferencesByTrainer(id) {
+    return apiRequest(
+      {
+        url: `${FORMATEURS_BASE}/${id}/module-preferences`,
+        method: 'get',
+      },
+      {
+        dedupeKey: `formateurs:module-preferences:${id}`,
+        cacheKey: `formateurs:module-preferences:${id}`,
+        cacheTtlMs: 15000,
+      },
+    );
+  },
+
+  respondModulePreferences(id, payload) {
+    return apiRequest({
+      url: `${FORMATEURS_BASE}/${id}/module-preferences`,
+      method: 'patch',
+      data: payload,
+    }).then((response) => {
+      invalidateApiCache(`formateurs:module-preferences:${id}`);
+      invalidateApiCache('formateur:module-preferences');
+      invalidateApiCache('formateur:notifications');
+      invalidateApiCache('formateurs:');
+      return response;
+    });
   },
 
   createDemande(payload) {

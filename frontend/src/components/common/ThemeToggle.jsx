@@ -10,10 +10,11 @@ export default function ThemeToggle({ compact = false, className = '' }) {
     <button
       type="button"
       onClick={toggleTheme}
+      aria-pressed={isDark}
       aria-label={isDark ? 'Activer le mode clair' : 'Activer le mode sombre'}
       title={isDark ? 'Mode clair' : 'Mode sombre'}
       className={cn(
-        'theme-icon-button group relative inline-flex items-center justify-center',
+        'group relative inline-flex items-center justify-center border border-slate-200 bg-slate-50 text-slate-600 shadow-sm backdrop-blur-none transition-all duration-200 hover:scale-[1.02] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20 focus-visible:ring-offset-0 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-300 dark:shadow-[0_0_0_1px_rgba(255,255,255,0.04)] dark:hover:bg-slate-800/70 dark:backdrop-blur-xl',
         compact ? 'h-10 w-10 rounded-full' : 'h-11 w-11 rounded-[16px]',
         isSaving && 'opacity-80',
         className,

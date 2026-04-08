@@ -27,10 +27,7 @@ function Notice({ notice }) {
     return null;
   }
 
-  const toneClasses =
-    notice.tone === 'success'
-      ? 'border-[#cae7d3] bg-[#edf9f1] text-[#18794e]'
-      : 'border-[#f5cfcf] bg-[#fff2f2] text-[#bf3d3d]';
+  const toneClasses = notice.tone === 'success' ? 'theme-status-success' : 'theme-status-danger';
 
   return (
     <div className={`rounded-[18px] border px-4 py-3 text-sm font-medium shadow-sm ${toneClasses}`}>
@@ -42,8 +39,8 @@ function Notice({ notice }) {
 function Field({ label, icon: Icon, children }) {
   return (
     <label className="block">
-      <div className="mb-3 flex items-center gap-2 text-[15px] font-semibold text-[#2b3546]">
-        <span className="inline-flex h-9 w-9 items-center justify-center rounded-[14px] bg-[#eef5ff] text-[#2a73ff]">
+      <div className="theme-text-primary mb-3 flex items-center gap-2 text-[15px] font-semibold">
+        <span className="inline-flex h-9 w-9 items-center justify-center rounded-[14px] bg-blue-50 text-blue-600 transition-colors duration-300 dark:bg-blue-400/20 dark:text-blue-200">
           <Icon className="h-4 w-4" />
         </span>
         <span>{label}</span>
@@ -57,7 +54,7 @@ function TextInput(props) {
   return (
     <input
       {...props}
-      className={`h-[58px] w-full rounded-[16px] border border-[#d9e1ec] bg-white px-4 text-[17px] text-[#24334f] outline-none transition placeholder:text-[#9aa7bc] focus:border-[#6aa2ff] focus:ring-4 focus:ring-[#dcebff] ${props.className || ''}`}
+      className={`theme-input theme-focus-ring h-[58px] w-full rounded-[16px] border px-4 text-[17px] outline-none ${props.className || ''}`}
     />
   );
 }
@@ -247,41 +244,41 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[70vh] items-center justify-center bg-[#d9e9ff]">
-        <div className="flex items-center gap-3 rounded-[22px] bg-white px-5 py-4 shadow-[0_18px_36px_rgba(45,88,160,0.12)]">
-          <Spinner className="h-7 w-7 border-[#cad7ea] border-t-[#2b73ff]" />
-          <span className="text-sm font-semibold text-[#31425f]">Chargement du profil...</span>
+      <div className="theme-page-shell flex min-h-[70vh] items-center justify-center px-4">
+        <div className="theme-card flex items-center gap-3 rounded-[22px] border px-5 py-4">
+          <Spinner className="h-7 w-7 border-slate-200 border-t-blue-600 dark:border-white/10 dark:border-t-blue-400" />
+          <span className="theme-text-primary text-sm font-semibold">Chargement du profil...</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-[calc(100vh-96px)] bg-[#d9e9ff] px-4 py-6 md:px-8 md:py-10">
+    <div className="theme-page-shell min-h-[calc(100vh-96px)] px-4 py-6 md:px-8 md:py-10">
       <div className="mx-auto max-w-[1540px] space-y-7">
         <div className="space-y-2">
-          <h1 className="text-[54px] font-semibold tracking-[-0.03em] text-[#202938] md:text-[60px]">Parametres</h1>
-          <p className="text-[17px] text-[#64748b]">Configuration du systeme et preferences utilisateur</p>
+          <h1 className="theme-text-primary text-[54px] font-semibold tracking-[-0.03em] md:text-[60px]">Parametres</h1>
+          <p className="theme-text-muted text-[17px]">Configuration du systeme et preferences utilisateur</p>
         </div>
 
         <Notice notice={notice} />
 
         <form
           onSubmit={handleProfileSubmit}
-          className="rounded-[28px] border border-[#d7e2ee] bg-white px-6 py-7 shadow-[0_18px_40px_rgba(44,85,156,0.14)] md:px-7"
+          className="theme-card rounded-[28px] border px-6 py-7 md:px-7"
         >
           <div className="mb-7 flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <span className="inline-flex h-14 w-14 items-center justify-center rounded-[18px] bg-[#ecf4ff] text-[#1e68ff]">
+              <span className="inline-flex h-14 w-14 items-center justify-center rounded-[18px] bg-blue-50 text-blue-600 transition-colors duration-300 dark:bg-blue-400/20 dark:text-blue-200">
                 <UserCircle2 className="h-7 w-7" />
               </span>
               <div>
-                <h2 className="text-[20px] font-semibold text-[#202938]">Profil Utilisateur</h2>
-                <p className="text-sm text-[#76859b]">Mettez a jour vos informations de connexion et votre avatar.</p>
+                <h2 className="theme-text-primary text-[20px] font-semibold">Profil Utilisateur</h2>
+                <p className="theme-text-muted text-sm">Mettez a jour vos informations de connexion et votre avatar.</p>
               </div>
             </div>
 
-            <span className="inline-flex items-center gap-2 rounded-full bg-[#eef5ff] px-4 py-2 text-sm font-semibold text-[#2a73ff]">
+            <span className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-600 transition-colors duration-300 dark:bg-blue-400/20 dark:text-blue-200">
               <ShieldCheck className="h-4 w-4" />
               {roleLabel}
             </span>
@@ -319,25 +316,25 @@ export default function ProfilePage() {
             </Field>
 
             <Field label="Photo de profil" icon={Camera}>
-              <div className="flex min-h-[58px] items-center justify-between gap-4 rounded-[16px] border border-[#d9e1ec] bg-white px-4 py-3">
+              <div className="theme-input flex min-h-[58px] items-center justify-between gap-4 rounded-[16px] border px-4 py-3">
                 <div className="flex min-w-0 items-center gap-3">
                   {photoPreview ? (
                     <img src={photoPreview} alt={profileForm.name || 'Profil'} className="h-12 w-12 rounded-full object-cover" />
                   ) : (
-                    <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#e8f1ff] text-lg font-semibold text-[#2a73ff]">
+                    <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 text-lg font-semibold text-blue-600 transition-colors duration-300 dark:bg-blue-400/20 dark:text-blue-200">
                       {initials}
                     </div>
                   )}
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-[#24334f]">{profileForm.name || 'Utilisateur'}</p>
-                    <p className="truncate text-xs text-[#8b99ad]">{profileForm.email || 'Aucune photo importee'}</p>
+                    <p className="theme-text-primary truncate text-sm font-semibold">{profileForm.name || 'Utilisateur'}</p>
+                    <p className="theme-text-muted truncate text-xs">{profileForm.email || 'Aucune photo importee'}</p>
                   </div>
                 </div>
 
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="inline-flex shrink-0 items-center gap-2 rounded-[14px] bg-[#eef5ff] px-4 py-2 text-sm font-semibold text-[#2a73ff] transition hover:bg-[#e2edff]"
+                  className="inline-flex shrink-0 items-center gap-2 rounded-[14px] bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-600 transition-colors duration-300 hover:bg-blue-100 dark:bg-blue-400/20 dark:text-blue-200 dark:hover:bg-blue-400/30"
                 >
                   <Upload className="h-4 w-4" />
                   Choisir
@@ -351,7 +348,7 @@ export default function ProfilePage() {
             <button
               type="submit"
               disabled={savingProfile}
-              className="inline-flex h-[54px] items-center gap-2 rounded-[14px] bg-[#0f7aea] px-6 text-[16px] font-semibold text-white shadow-[0_14px_28px_rgba(15,122,234,0.28)] transition hover:bg-[#0c6ed4] disabled:cursor-not-allowed disabled:opacity-70"
+              className="inline-flex h-[54px] items-center gap-2 rounded-[14px] bg-gradient-to-r from-blue-500 to-blue-700 px-6 text-[16px] font-semibold text-white shadow-sm transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70 dark:shadow-none"
             >
               {savingProfile ? <Spinner className="h-5 w-5 border-white/40 border-t-white" /> : <Save className="h-4 w-4" />}
               Enregistrer les Modifications
@@ -361,15 +358,15 @@ export default function ProfilePage() {
 
         <form
           onSubmit={handlePasswordSubmit}
-          className="rounded-[28px] border border-[#d7e2ee] bg-white px-6 py-7 shadow-[0_18px_40px_rgba(44,85,156,0.14)] md:px-7"
+          className="theme-card rounded-[28px] border px-6 py-7 md:px-7"
         >
           <div className="mb-7 flex items-center gap-3">
-            <span className="inline-flex h-14 w-14 items-center justify-center rounded-[18px] bg-[#fff0f0] text-[#ef4444]">
+            <span className="inline-flex h-14 w-14 items-center justify-center rounded-[18px] bg-rose-50 text-rose-600 transition-colors duration-300 dark:bg-rose-500/10 dark:text-rose-200">
               <Lock className="h-7 w-7" />
             </span>
             <div>
-              <h2 className="text-[20px] font-semibold text-[#202938]">Securite</h2>
-              <p className="text-sm text-[#76859b]">Changez votre mot de passe sans modifier le reste de votre profil.</p>
+              <h2 className="theme-text-primary text-[20px] font-semibold">Securite</h2>
+              <p className="theme-text-muted text-sm">Changez votre mot de passe sans modifier le reste de votre profil.</p>
             </div>
           </div>
 
@@ -411,7 +408,7 @@ export default function ProfilePage() {
             <button
               type="submit"
               disabled={savingPassword}
-              className="inline-flex h-[54px] items-center gap-2 rounded-[14px] bg-[#ef4444] px-6 text-[16px] font-semibold text-white shadow-[0_14px_28px_rgba(239,68,68,0.24)] transition hover:bg-[#dc2626] disabled:cursor-not-allowed disabled:opacity-70"
+              className="inline-flex h-[54px] items-center gap-2 rounded-[14px] bg-gradient-to-r from-rose-500 to-rose-600 px-6 text-[16px] font-semibold text-white shadow-sm transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70 dark:shadow-none"
             >
               {savingPassword ? <Spinner className="h-5 w-5 border-white/40 border-t-white" /> : <Lock className="h-4 w-4" />}
               Changer le Mot de Passe

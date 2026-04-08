@@ -7,7 +7,7 @@ $controller = new AcademicConfigController($conn);
 $method = requestMethod();
 
 if ($method === 'GET') {
-    requireRole([1, 2]);
+    requireRole([1, 2, 3]);
     $controller->show();
     return;
 }

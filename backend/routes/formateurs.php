@@ -11,6 +11,7 @@ $id = !empty($segments[0]) ? intval($segments[0]) : null;
 $child = $segments[1] ?? null;
 
 if ($method === 'GET' && $id === null) {
+    requireAuth();
     $controller->index();
     return;
 }
@@ -22,11 +23,25 @@ if ($method === 'POST' && $id === null) {
 }
 
 if ($id !== null && $child === 'hours' && $method === 'GET') {
+    requireAuth();
     $controller->hours($id);
     return;
 }
 
+if ($id !== null && $child === 'module-preferences' && $method === 'GET') {
+    requireRole([1, 2]);
+    $controller->getTrainerModulePreferences($id);
+    return;
+}
+
+if ($id !== null && $child === 'module-preferences' && in_array($method, ['PUT', 'PATCH'], true)) {
+    requireRole([1, 2]);
+    $controller->reviewTrainerModulePreferences($id);
+    return;
+}
+
 if ($id !== null && $method === 'GET') {
+    requireAuth();
     $controller->show($id);
     return;
 }

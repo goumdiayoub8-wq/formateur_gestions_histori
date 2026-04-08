@@ -79,6 +79,20 @@ cd backend && php -S 127.0.0.1:8000 router.php
 cd frontend && npm run dev
 ```
 
+### Jeu de donnees demo additionnel
+
+Le projet charge automatiquement le schema principal depuis `database/final_database.sql`.
+
+Le fichier `database/seed_data.sql` est optionnel : il ajoute un jeu de donnees plus riche pour remplir les dashboards, les questionnaires, les affectations et le planning de demonstration.
+
+Pour l appliquer sur la base configuree dans `backend/.env` :
+
+```bash
+./database/apply_seed.sh
+```
+
+Ce seed ne recree pas le schema. Il complete la base existante avec des donnees de demo reimportables.
+
 ## Variables d’environnement
 
 Backend : copier `backend/.env.example` vers `backend/.env`.

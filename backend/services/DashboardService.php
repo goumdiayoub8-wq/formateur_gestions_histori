@@ -5,9 +5,13 @@ require_once __DIR__ . '/../repositories/FormateurRepository.php';
 require_once __DIR__ . '/../services/PlanningService.php';
 require_once __DIR__ . '/../services/FormateurService.php';
 require_once __DIR__ . '/../core/HttpException.php';
+require_once __DIR__ . '/../core/JsonCache.php';
 
 class DashboardService
 {
+    private const STATS_CACHE_TTL_SECONDS = 60;
+    private const DIRECTOR_CACHE_TTL_SECONDS = 60;
+
     private DashboardRepository $dashboard;
     private FormateurRepository $formateurs;
     private PlanningService $planning;
@@ -19,6 +23,16 @@ class DashboardService
         $this->formateurs = new FormateurRepository($db);
         $this->planning = new PlanningService($db);
         $this->formateurService = new FormateurService($db);
+    }
+
+    private function statsCacheKey(): string
+    {
+        return 'dashboard-stats:' . currentAcademicYear() . ':' . currentAcademicWeek();
+    }
+
+    private function directorOverviewCacheKey(): string
+    {
+        return 'dashboard-director-overview:' . currentAcademicYear() . ':' . currentAcademicWeek();
     }
 
     private function enrichModulesWithQuestionnaires(array $modules, int $formateurId, int $annee): array
@@ -46,192 +60,198 @@ class DashboardService
 
     public function stats(): array
     {
-        $overview = $this->dashboard->getOverview();
-        $trainerRows = $this->dashboard->getTrainerRows();
-        $weeklyOverloads = $this->dashboard->getWeeklyOverloads();
-        $modulePerformance = $this->dashboard->getModulePerformanceRows(currentAcademicYear(), 8);
-        $moduleCompletion = $this->dashboard->getModuleCompletionRows(6, 'DESC');
-        $teachingLoad = $this->dashboard->getTeachingLoadTimeline(8, 6);
-        $questionnaireAnalytics = $this->dashboard->getQuestionnaireAnalytics(currentAcademicYear());
-        $questionnaireHighlights = [
-            'top' => $this->dashboard->getQuestionnaireModuleInsights(4, 'DESC'),
-            'bottom' => $this->dashboard->getQuestionnaireModuleInsights(4, 'ASC'),
-        ];
+        return JsonCache::remember($this->statsCacheKey(), self::STATS_CACHE_TTL_SECONDS, function (): array {
+            $overview = $this->dashboard->getOverview();
+            $trainerRows = $this->dashboard->getTrainerRows();
+            $weeklyOverloads = $this->dashboard->getWeeklyOverloads();
+            $modulePerformance = $this->dashboard->getModulePerformanceRows(currentAcademicYear(), 8);
+            $moduleCompletion = $this->dashboard->getModuleCompletionRows(6, 'DESC');
+            $teachingLoad = $this->dashboard->getTeachingLoadTimeline(8, 6);
+            $hoursByFiliere = $this->dashboard->getHoursByFiliere();
+            $questionnaireAnalytics = $this->dashboard->getQuestionnaireAnalytics(currentAcademicYear());
+            $questionnaireHighlights = [
+                'top' => $this->dashboard->getQuestionnaireModuleInsights(4, 'DESC'),
+                'bottom' => $this->dashboard->getQuestionnaireModuleInsights(4, 'ASC'),
+            ];
 
-        $alerts = [];
-        $trainerStats = [];
-        $globalS1 = 0.0;
-        $globalS2 = 0.0;
-        $totalPlannedHours = 0.0;
-        $totalCompletedHours = 0.0;
-        $currentWeekPlannedHours = 0.0;
+            $alerts = [];
+            $trainerStats = [];
+            $globalS1 = 0.0;
+            $globalS2 = 0.0;
+            $totalPlannedHours = 0.0;
+            $totalCompletedHours = 0.0;
+            $currentWeekPlannedHours = 0.0;
 
-        foreach ($trainerRows as $row) {
-            $annualHours = round(floatval($row['annual_hours'] ?? 0), 2);
-            $s1Hours = round(floatval($row['s1_hours'] ?? 0), 2);
-            $s2Hours = round(floatval($row['s2_hours'] ?? 0), 2);
-            $plannedHours = round(floatval($row['planned_hours'] ?? 0), 2);
-            $completedHours = round(floatval($row['completed_hours'] ?? 0), 2);
-            $plannedS1Hours = round(floatval($row['planned_s1_hours'] ?? 0), 2);
-            $plannedS2Hours = round(floatval($row['planned_s2_hours'] ?? 0), 2);
-            $currentWeekHours = round(floatval($row['current_week_hours'] ?? 0), 2);
-            $maxWeekHours = round(floatval($row['max_week_hours'] ?? 0), 2);
-            $difference = round(abs($plannedS1Hours - $plannedS2Hours), 2);
-            $questionnairePercentage = $row['questionnaire_percentage'] !== null
-                ? round(floatval($row['questionnaire_percentage']), 2)
-                : null;
+            foreach ($trainerRows as $row) {
+                $annualHours = round(floatval($row['annual_hours'] ?? 0), 2);
+                $s1Hours = round(floatval($row['s1_hours'] ?? 0), 2);
+                $s2Hours = round(floatval($row['s2_hours'] ?? 0), 2);
+                $plannedHours = round(floatval($row['planned_hours'] ?? 0), 2);
+                $completedHours = round(floatval($row['completed_hours'] ?? 0), 2);
+                $plannedS1Hours = round(floatval($row['planned_s1_hours'] ?? 0), 2);
+                $plannedS2Hours = round(floatval($row['planned_s2_hours'] ?? 0), 2);
+                $currentWeekHours = round(floatval($row['current_week_hours'] ?? 0), 2);
+                $maxWeekHours = round(floatval($row['max_week_hours'] ?? 0), 2);
+                $difference = round(abs($plannedS1Hours - $plannedS2Hours), 2);
+                $questionnairePercentage = $row['questionnaire_percentage'] !== null
+                    ? round(floatval($row['questionnaire_percentage']), 2)
+                    : null;
 
-            $globalS1 += $plannedS1Hours;
-            $globalS2 += $plannedS2Hours;
-            $totalPlannedHours += $plannedHours;
-            $totalCompletedHours += $completedHours;
-            $currentWeekPlannedHours += $currentWeekHours;
+                $globalS1 += $plannedS1Hours;
+                $globalS2 += $plannedS2Hours;
+                $totalPlannedHours += $plannedHours;
+                $totalCompletedHours += $completedHours;
+                $currentWeekPlannedHours += $currentWeekHours;
 
-            $rowAlerts = [];
+                $rowAlerts = [];
 
-            if ($plannedHours > floatval($row['max_heures'])) {
-                $rowAlerts[] = 'annual_limit_exceeded';
-                $alerts[] = [
-                    'type' => 'annual_limit_exceeded',
-                    'formateur_id' => intval($row['id']),
-                    'message' => $row['nom'] . ' depasse sa limite annuelle.',
+                if ($plannedHours > floatval($row['max_heures'])) {
+                    $rowAlerts[] = 'annual_limit_exceeded';
+                    $alerts[] = [
+                        'type' => 'annual_limit_exceeded',
+                        'formateur_id' => intval($row['id']),
+                        'message' => $row['nom'] . ' depasse sa limite annuelle.',
+                    ];
+                }
+
+                if ($difference > max(30, ($s1Hours + $s2Hours) * 0.20)) {
+                    $rowAlerts[] = 'semester_imbalance';
+                    $alerts[] = [
+                        'type' => 'semester_imbalance',
+                        'formateur_id' => intval($row['id']),
+                        'message' => $row['nom'] . ' a une repartition S1/S2 desequilibree.',
+                    ];
+                }
+
+                $trainerStats[] = [
+                    'id' => intval($row['id']),
+                    'nom' => $row['nom'],
+                    'email' => $row['email'],
+                    'specialite' => $row['specialite'],
+                    'annual_hours' => $annualHours,
+                    'planned_hours' => $plannedHours,
+                    'completed_hours' => $completedHours,
+                    'max_heures' => intval($row['max_heures']),
+                    's1_hours' => $s1Hours,
+                    's2_hours' => $s2Hours,
+                    'planned_s1_hours' => $plannedS1Hours,
+                    'planned_s2_hours' => $plannedS2Hours,
+                    'semester_gap' => $difference,
+                    'current_week_hours' => $currentWeekHours,
+                    'max_week_hours' => $maxWeekHours,
+                    'questionnaire_percentage' => $questionnairePercentage,
+                    'alerts' => $rowAlerts,
                 ];
             }
 
-            if ($difference > max(30, ($s1Hours + $s2Hours) * 0.20)) {
-                $rowAlerts[] = 'semester_imbalance';
+            foreach ($weeklyOverloads as $row) {
                 $alerts[] = [
-                    'type' => 'semester_imbalance',
-                    'formateur_id' => intval($row['id']),
-                    'message' => $row['nom'] . ' a une repartition S1/S2 desequilibree.',
+                    'type' => 'weekly_overload',
+                    'formateur_id' => intval($row['formateur_id']),
+                    'message' => $row['nom'] . ' depasse 44h en semaine ' . intval($row['semaine']) . '.',
                 ];
             }
 
-            $trainerStats[] = [
-                'id' => intval($row['id']),
-                'nom' => $row['nom'],
-                'email' => $row['email'],
-                'specialite' => $row['specialite'],
-                'annual_hours' => $annualHours,
-                'planned_hours' => $plannedHours,
-                'completed_hours' => $completedHours,
-                'max_heures' => intval($row['max_heures']),
-                's1_hours' => $s1Hours,
-                's2_hours' => $s2Hours,
-                'planned_s1_hours' => $plannedS1Hours,
-                'planned_s2_hours' => $plannedS2Hours,
-                'semester_gap' => $difference,
-                'current_week_hours' => $currentWeekHours,
-                'max_week_hours' => $maxWeekHours,
-                'questionnaire_percentage' => $questionnairePercentage,
-                'alerts' => $rowAlerts,
+            return [
+                'overview' => [
+                    'total_formateurs' => intval($overview['total_formateurs'] ?? 0),
+                    'total_modules' => intval($overview['total_modules'] ?? 0),
+                    'total_affectations' => intval($overview['total_affectations'] ?? 0),
+                    'total_planning_rows' => intval($overview['total_planning_rows'] ?? 0),
+                    'total_module_hours' => round(floatval($overview['total_module_hours'] ?? 0), 2),
+                    'total_validated_planned_hours' => round($totalPlannedHours, 2),
+                    'total_completed_hours' => round($totalCompletedHours, 2),
+                    'current_week_validated_hours' => round($currentWeekPlannedHours, 2),
+                ],
+                'semester_balance' => [
+                    'S1' => round($globalS1, 2),
+                    'S2' => round($globalS2, 2),
+                    'imbalance' => round(abs($globalS1 - $globalS2), 2),
+                ],
+                'formateurs' => $trainerStats,
+                'module_performance' => $modulePerformance,
+                'module_completion' => $moduleCompletion,
+                'hours_by_filiere' => $hoursByFiliere,
+                'teaching_load' => $teachingLoad,
+                'questionnaire_analytics' => [
+                    'assigned_questionnaires' => $questionnaireAnalytics['assigned_questionnaires'] ?? 0,
+                    'completed_questionnaires' => $questionnaireAnalytics['completed_questionnaires'] ?? 0,
+                    'average_percentage' => $questionnaireAnalytics['average_percentage'] ?? null,
+                    'completion_rate' => intval(round(
+                        ($questionnaireAnalytics['assigned_questionnaires'] ?? 0) > 0
+                            ? (($questionnaireAnalytics['completed_questionnaires'] ?? 0) / $questionnaireAnalytics['assigned_questionnaires']) * 100
+                            : 0
+                    )),
+                    'top_modules' => $questionnaireHighlights['top'],
+                    'bottom_modules' => $questionnaireHighlights['bottom'],
+                ],
+                'alerts' => $alerts,
             ];
-        }
-
-        foreach ($weeklyOverloads as $row) {
-            $alerts[] = [
-                'type' => 'weekly_overload',
-                'formateur_id' => intval($row['formateur_id']),
-                'message' => $row['nom'] . ' depasse 44h en semaine ' . intval($row['semaine']) . '.',
-            ];
-        }
-
-        return [
-            'overview' => [
-                'total_formateurs' => intval($overview['total_formateurs'] ?? 0),
-                'total_modules' => intval($overview['total_modules'] ?? 0),
-                'total_affectations' => intval($overview['total_affectations'] ?? 0),
-                'total_planning_rows' => intval($overview['total_planning_rows'] ?? 0),
-                'total_module_hours' => round(floatval($overview['total_module_hours'] ?? 0), 2),
-                'total_validated_planned_hours' => round($totalPlannedHours, 2),
-                'total_completed_hours' => round($totalCompletedHours, 2),
-                'current_week_validated_hours' => round($currentWeekPlannedHours, 2),
-            ],
-            'semester_balance' => [
-                'S1' => round($globalS1, 2),
-                'S2' => round($globalS2, 2),
-                'imbalance' => round(abs($globalS1 - $globalS2), 2),
-            ],
-            'formateurs' => $trainerStats,
-            'module_performance' => $modulePerformance,
-            'module_completion' => $moduleCompletion,
-            'teaching_load' => $teachingLoad,
-            'questionnaire_analytics' => [
-                'assigned_questionnaires' => $questionnaireAnalytics['assigned_questionnaires'] ?? 0,
-                'completed_questionnaires' => $questionnaireAnalytics['completed_questionnaires'] ?? 0,
-                'average_percentage' => $questionnaireAnalytics['average_percentage'] ?? null,
-                'completion_rate' => intval(round(
-                    ($questionnaireAnalytics['assigned_questionnaires'] ?? 0) > 0
-                        ? (($questionnaireAnalytics['completed_questionnaires'] ?? 0) / $questionnaireAnalytics['assigned_questionnaires']) * 100
-                        : 0
-                )),
-                'top_modules' => $questionnaireHighlights['top'],
-                'bottom_modules' => $questionnaireHighlights['bottom'],
-            ],
-            'alerts' => $alerts,
-        ];
+        });
     }
 
     public function directorOverview(): array
     {
-        $kpis = $this->dashboard->getDirectorKpis();
-        $validationStatus = $this->dashboard->getValidationStatusBreakdown();
-        $filiereProgress = $this->dashboard->getFiliereProgress();
-        $recentActivities = $this->dashboard->getRecentActivities();
-        $stats = $this->stats();
-        $hoursByFiliere = $this->dashboard->getHoursByFiliere();
-        $bestModules = $this->dashboard->getModuleCompletionRows(3, 'DESC');
-        $worstModules = $this->dashboard->getModuleCompletionRows(3, 'ASC');
+        return JsonCache::remember($this->directorOverviewCacheKey(), self::DIRECTOR_CACHE_TTL_SECONDS, function (): array {
+            $kpis = $this->dashboard->getDirectorKpis();
+            $validationStatus = $this->dashboard->getValidationStatusBreakdown();
+            $filiereProgress = $this->dashboard->getFiliereProgress();
+            $recentActivities = $this->dashboard->getRecentActivities();
+            $stats = $this->stats();
+            $hoursByFiliere = $this->dashboard->getHoursByFiliere();
+            $bestModules = $this->dashboard->getModuleCompletionRows(3, 'DESC');
+            $worstModules = $this->dashboard->getModuleCompletionRows(3, 'ASC');
 
-        $totalSubmissions = max(1, intval($kpis['total_submissions'] ?? 0));
-        $approvedCount = intval($validationStatus['validated'] ?? 0);
-        $validationRate = round(($approvedCount / $totalSubmissions) * 100);
-        $totalModuleHours = round(floatval($stats['overview']['total_module_hours'] ?? 0), 2);
-        $completedHours = round(floatval($stats['overview']['total_completed_hours'] ?? 0), 2);
-        $validatedPlannedHours = round(floatval($stats['overview']['total_validated_planned_hours'] ?? 0), 2);
-        $questionnaireAnalytics = $stats['questionnaire_analytics'] ?? [];
-        $trainerRanking = $this->buildTrainerRanking($stats['formateurs'] ?? []);
+            $totalSubmissions = max(1, intval($kpis['total_submissions'] ?? 0));
+            $approvedCount = intval($validationStatus['validated'] ?? 0);
+            $validationRate = round(($approvedCount / $totalSubmissions) * 100);
+            $totalModuleHours = round(floatval($stats['overview']['total_module_hours'] ?? 0), 2);
+            $completedHours = round(floatval($stats['overview']['total_completed_hours'] ?? 0), 2);
+            $validatedPlannedHours = round(floatval($stats['overview']['total_validated_planned_hours'] ?? 0), 2);
+            $questionnaireAnalytics = $stats['questionnaire_analytics'] ?? [];
+            $trainerRanking = $this->buildTrainerRanking($stats['formateurs'] ?? []);
 
-        return [
-            'hero' => [
-                'title' => 'Tableau de Bord - Directeur Pedagogique',
-                'subtitle' => 'Suivi et validation des activites pedagogiques',
-            ],
-            'kpis' => [
-                'pending_validations' => intval($kpis['pending_validations'] ?? 0),
-                'validation_rate' => $validationRate,
-                'validation_rate_delta' => intval($kpis['approved_this_week'] ?? 0),
-                'modules_in_progress' => intval($kpis['modules_in_progress'] ?? 0),
-                'active_groups' => intval($kpis['active_groups'] ?? 0),
-            ],
-            'validation_status' => [
-                'validated' => $approvedCount,
-                'pending' => intval($validationStatus['pending'] ?? 0),
-                'revision' => intval($validationStatus['revision'] ?? 0),
-            ],
-            'global_performance' => [
-                'completion_rate' => $totalModuleHours > 0
-                    ? intval(round(min(100, ($completedHours / $totalModuleHours) * 100)))
-                    : 0,
-                'planned_coverage_rate' => $totalModuleHours > 0
-                    ? intval(round(min(100, ($validatedPlannedHours / $totalModuleHours) * 100)))
-                    : 0,
-                'questionnaire_completion_rate' => intval($questionnaireAnalytics['completion_rate'] ?? 0),
-                'questionnaire_average' => $questionnaireAnalytics['average_percentage'] !== null
-                    ? round(floatval($questionnaireAnalytics['average_percentage']), 2)
-                    : null,
-            ],
-            'filiere_progress' => $filiereProgress,
-            'hours_by_filiere' => $hoursByFiliere,
-            'module_highlights' => [
-                'best' => $bestModules,
-                'worst' => $worstModules,
-            ],
-            'trainer_ranking' => $trainerRanking,
-            'questionnaire_analytics' => $questionnaireAnalytics,
-            'recent_activities' => $recentActivities,
-            'alerts' => $stats['alerts'],
-        ];
+            return [
+                'hero' => [
+                    'title' => 'Tableau de Bord - Directeur Pedagogique',
+                    'subtitle' => 'Suivi et validation des activites pedagogiques',
+                ],
+                'kpis' => [
+                    'pending_validations' => intval($kpis['pending_validations'] ?? 0),
+                    'validation_rate' => $validationRate,
+                    'validation_rate_delta' => intval($kpis['approved_this_week'] ?? 0),
+                    'modules_in_progress' => intval($kpis['modules_in_progress'] ?? 0),
+                    'active_groups' => intval($kpis['active_groups'] ?? 0),
+                ],
+                'validation_status' => [
+                    'validated' => $approvedCount,
+                    'pending' => intval($validationStatus['pending'] ?? 0),
+                    'revision' => intval($validationStatus['revision'] ?? 0),
+                ],
+                'global_performance' => [
+                    'completion_rate' => $totalModuleHours > 0
+                        ? intval(round(min(100, ($completedHours / $totalModuleHours) * 100)))
+                        : 0,
+                    'planned_coverage_rate' => $totalModuleHours > 0
+                        ? intval(round(min(100, ($validatedPlannedHours / $totalModuleHours) * 100)))
+                        : 0,
+                    'questionnaire_completion_rate' => intval($questionnaireAnalytics['completion_rate'] ?? 0),
+                    'questionnaire_average' => $questionnaireAnalytics['average_percentage'] !== null
+                        ? round(floatval($questionnaireAnalytics['average_percentage']), 2)
+                        : null,
+                ],
+                'filiere_progress' => $filiereProgress,
+                'hours_by_filiere' => $hoursByFiliere,
+                'module_highlights' => [
+                    'best' => $bestModules,
+                    'worst' => $worstModules,
+                ],
+                'trainer_ranking' => $trainerRanking,
+                'questionnaire_analytics' => $questionnaireAnalytics,
+                'recent_activities' => $recentActivities,
+                'alerts' => $stats['alerts'],
+            ];
+        });
     }
 
     private function buildTrainerRanking(array $trainerRows): array
@@ -462,6 +482,8 @@ class DashboardService
             throw new RuntimeException('Impossible de creer la demande de modification.');
         }
 
+        JsonCache::forgetByPrefix('dashboard-');
+
         return $created;
     }
 
@@ -485,6 +507,25 @@ class DashboardService
             throw new ValidationException('Le statut de revue est invalide.');
         }
 
-        return $this->planning->reviewDemandeRequest($requestId, $normalizedStatus, $note);
+        $result = $this->planning->reviewDemandeRequest($requestId, $normalizedStatus, $note);
+        JsonCache::forgetByPrefix('dashboard-');
+
+        return $result;
+    }
+
+    public function bulkReviewTrainerChangeRequests(array $requestIds, string $status, ?string $note = null): array
+    {
+        $normalizedStatus = $status === 'approved'
+            ? 'validated'
+            : $status;
+
+        if (!in_array($normalizedStatus, ['validated', 'rejected'], true)) {
+            throw new ValidationException('Le statut de revue est invalide.');
+        }
+
+        $result = $this->planning->bulkReviewDemandeRequests($requestIds, $normalizedStatus, $note);
+        JsonCache::forgetByPrefix('dashboard-');
+
+        return $result;
     }
 }

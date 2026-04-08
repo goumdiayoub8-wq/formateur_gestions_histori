@@ -4,13 +4,85 @@
     <meta charset="utf-8" />
     <link rel="icon" type="image/png" href="/logo192.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#000000" />
+    <meta name="theme-color" content="#f5f7fb" />
     <meta
       name="description"
       content="Gestion des horaires et charges des formateurs"
     />
     <link rel="apple-touch-icon" href="/logo192.png" />
     <link rel="manifest" href="/manifest.json" />
+    <script>
+      (function () {
+        var USER_KEY = "user";
+        var THEME_KEY = "theme";
+        var DARK = "dark";
+        var LIGHT = "light";
+
+        function isTheme(value) {
+          return value === DARK || value === LIGHT;
+        }
+
+        function readJson(key) {
+          try {
+            var value = window.localStorage.getItem(key);
+
+            if (!value || value === "undefined") {
+              window.localStorage.removeItem(key);
+              return null;
+            }
+
+            return JSON.parse(value);
+          } catch (error) {
+            window.localStorage.removeItem(key);
+            return null;
+          }
+        }
+
+        function readGuestTheme() {
+          try {
+            var theme = window.localStorage.getItem(THEME_KEY);
+
+            if (!theme) {
+              return null;
+            }
+
+            if (!isTheme(theme)) {
+              window.localStorage.removeItem(THEME_KEY);
+              return null;
+            }
+
+            return theme;
+          } catch (error) {
+            return null;
+          }
+        }
+
+        var storedUser = readJson(USER_KEY);
+        var storedUserTheme =
+          storedUser && isTheme(storedUser.theme_preference)
+            ? storedUser.theme_preference
+            : null;
+        var guestTheme = readGuestTheme();
+        var systemTheme =
+          window.matchMedia &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? DARK
+            : LIGHT;
+        var theme = storedUserTheme || guestTheme || systemTheme;
+        var root = document.documentElement;
+        var themeColorMeta = document.querySelector('meta[name="theme-color"]');
+
+        root.classList.toggle(DARK, theme === DARK);
+        root.style.colorScheme = theme;
+
+        if (themeColorMeta) {
+          themeColorMeta.setAttribute(
+            "content",
+            theme === DARK ? "#0f172a" : "#f5f7fb",
+          );
+        }
+      })();
+    </script>
     <title>Gestion des horaires formateurs</title>
   </head>
   <body>

@@ -45,9 +45,9 @@ export default function useAcademicConfig(options = {}) {
   const validation = useMemo(() => validateAcademicConfig(config || {}), [config]);
 
   const derived = useMemo(() => {
-    if (!config || !validation.isValid) {
+    if (!config) {
       return {
-        academicYearLabel: config ? formatAcademicYear(config) : '',
+        academicYearLabel: '',
         currentWeek: null,
         currentSemester: null,
         inStagePeriod: false,

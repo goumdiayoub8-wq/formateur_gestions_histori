@@ -88,7 +88,7 @@ class RequestThrottleService
                 'Trop de tentatives. Veuillez reessayer plus tard.'
             );
         } catch (TooManyRequestsException $exception) {
-            // The caller decides how to surface the block.
+            // Le message sera gere plus haut
         }
     }
 

@@ -8,7 +8,7 @@ export default function ProtectedRoute({ allowedRole }) {
 
   if (!initialized || loading) {
     return (
-      <div className="theme-page-shell flex min-h-screen items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-[var(--bg-secondary)] text-slate-900 transition-colors duration-300 dark:bg-slate-950 dark:text-slate-100">
         <Spinner className="h-10 w-10 border-slate-300 border-t-teal-500" />
       </div>
     );

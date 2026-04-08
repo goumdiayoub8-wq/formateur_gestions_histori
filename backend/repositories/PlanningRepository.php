@@ -84,6 +84,59 @@ class PlanningRepository
         return [$placeholders, array_values($values)];
     }
 
+    private function paginateArray(array $rows, int $page = 1, int $limit = 5): array
+    {
+        $normalizedLimit = max(1, min(100, $limit));
+        $totalItems = count($rows);
+        $totalPages = max(1, (int) ceil($totalItems / $normalizedLimit));
+        $currentPage = min(max(1, $page), $totalPages);
+        $offset = ($currentPage - 1) * $normalizedLimit;
+
+        return [
+            'data' => array_slice($rows, $offset, $normalizedLimit),
+            'total_items' => $totalItems,
+            'total_pages' => $totalPages,
+            'current_page' => $currentPage,
+            'limit' => $normalizedLimit,
+        ];
+    }
+
+    private function applyPlanningFilters(string $sql, array $filters, array &$params): string
+    {
+        if (!empty($filters['formateur_id'])) {
+            $sql .= ' AND p.formateur_id = :formateur_id';
+            $params['formateur_id'] = intval($filters['formateur_id']);
+        }
+
+        if (!empty($filters['module_id'])) {
+            $sql .= ' AND p.module_id = :module_id';
+            $params['module_id'] = intval($filters['module_id']);
+        }
+
+        if (!empty($filters['semaine'])) {
+            $sql .= ' AND p.semaine = :semaine';
+            $params['semaine'] = intval($filters['semaine']);
+        }
+
+        if (!empty($filters['search'])) {
+            $sql .= ' AND (
+                f.nom LIKE :search_formateur_nom
+                OR COALESCE(f.email, "") LIKE :search_formateur_email
+                OR m.intitule LIKE :search_module_intitule
+                OR COALESCE(m.code, "") LIKE :search_module_code
+                OR COALESCE(m.filiere, "") LIKE :search_module_filiere
+            )';
+            $searchValue = '%' . trim((string) $filters['search']) . '%';
+            $params['search_formateur_nom'] = $searchValue;
+            $params['search_formateur_email'] = $searchValue;
+            $params['search_module_intitule'] = $searchValue;
+            $params['search_module_code'] = $searchValue;
+            $params['search_module_filiere'] = $searchValue;
+        }
+
+        return $sql;
+    }
+
     private function hasSubmissionSnapshot(array $row): bool
     {
         return !empty($row['snapshot_captured_at'])
@@ -132,21 +185,7 @@ class PlanningRepository
                 INNER JOIN modules m ON m.id = p.module_id
                 WHERE 1 = 1';
         $params = [];
-
-        if (!empty($filters['formateur_id'])) {
-            $sql .= ' AND p.formateur_id = :formateur_id';
-            $params['formateur_id'] = intval($filters['formateur_id']);
-        }
-
-        if (!empty($filters['module_id'])) {
-            $sql .= ' AND p.module_id = :module_id';
-            $params['module_id'] = intval($filters['module_id']);
-        }
-
-        if (!empty($filters['semaine'])) {
-            $sql .= ' AND p.semaine = :semaine';
-            $params['semaine'] = intval($filters['semaine']);
-        }
+        $sql = $this->applyPlanningFilters($sql, $filters, $params);
 
         $sql .= ' ORDER BY p.semaine, f.nom, m.intitule';
 
@@ -154,6 +193,57 @@ class PlanningRepository
         $stmt->execute($params);
 
         return array_map(fn (array $row): array => $this->normalizeRow($row), $stmt->fetchAll());
+    }
+
+    public function paginate(int $page = 1, int $limit = 5, array $filters = []): array
+    {
+        $normalizedLimit = max(1, min(100, $limit));
+        $baseSql = 'FROM planning p
+                    INNER JOIN formateurs f ON f.id = p.formateur_id
+                    INNER JOIN modules m ON m.id = p.module_id
+                    WHERE 1 = 1';
+        $params = [];
+        $filteredSql = $this->applyPlanningFilters($baseSql, $filters, $params);
+
+        $countStmt = $this->db->prepare('SELECT COUNT(*) ' . $filteredSql);
+        $countStmt->execute($params);
+        $totalItems = intval($countStmt->fetchColumn() ?: 0);
+        $totalPages = max(1, (int) ceil($totalItems / $normalizedLimit));
+        $currentPage = min(max(1, $page), $totalPages);
+        $offset = ($currentPage - 1) * $normalizedLimit;
+
+        $sql = 'SELECT
+                    p.id,
+                    p.formateur_id,
+                    p.module_id,
+                    p.semaine,
+                    p.heures,
+                    p.created_at,
+                    p.updated_at,
+                    f.nom AS formateur_nom,
+                    m.intitule AS module_intitule,
+                    COALESCE(m.code, CONCAT("M", LPAD(m.id, 3, "0"))) AS module_code,
+                    m.filiere,
+                    m.semestre
+                ' . $filteredSql . '
+                ORDER BY p.semaine DESC, f.nom ASC, m.intitule ASC
+                LIMIT :limit OFFSET :offset';
+
+        $stmt = $this->db->prepare($sql);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue(':' . $key, $value, is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR);
+        }
+        $stmt->bindValue(':limit', $normalizedLimit, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return [
+            'data' => array_map(fn (array $row): array => $this->normalizeRow($row), $stmt->fetchAll()),
+            'total_items' => $totalItems,
+            'total_pages' => $totalPages,
+            'current_page' => $currentPage,
+            'limit' => $normalizedLimit,
+        ];
     }
 
     public function find(int $id): ?array
@@ -354,9 +444,9 @@ class PlanningRepository
 
         if (!empty($filters['q'])) {
             $sql .= ' AND (
-                f.nom LIKE :q
-                OR f.specialite LIKE :q
-                OR f.email LIKE :q
+                f.nom LIKE :q_formateur_nom
+                OR f.specialite LIKE :q_formateur_specialite
+                OR f.email LIKE :q_formateur_email
                 OR EXISTS (
                     SELECT 1
                     FROM affectations a3
@@ -364,12 +454,17 @@ class PlanningRepository
                     WHERE a3.formateur_id = f.id
                       AND a3.annee = :annee_query
                       AND (
-                        m3.intitule LIKE :q
-                        OR COALESCE(m3.code, "") LIKE :q
+                        m3.intitule LIKE :q_module_intitule
+                        OR COALESCE(m3.code, "") LIKE :q_module_code
                       )
                 )
             )';
-            $params['q'] = '%' . trim((string) $filters['q']) . '%';
+            $queryValue = '%' . trim((string) $filters['q']) . '%';
+            $params['q_formateur_nom'] = $queryValue;
+            $params['q_formateur_specialite'] = $queryValue;
+            $params['q_formateur_email'] = $queryValue;
+            $params['q_module_intitule'] = $queryValue;
+            $params['q_module_code'] = $queryValue;
             $params['annee_query'] = $annee;
         }
 
@@ -703,8 +798,6 @@ class PlanningRepository
 
     public function getValidationHistory(int $limit = 5): array
     {
-        $this->buildValidationDataset();
-
         $stmt = $this->db->prepare(
             'SELECT
                 s.id,
@@ -732,11 +825,61 @@ class PlanningRepository
         }, $stmt->fetchAll());
     }
 
+    public function getValidationHistoryPaginated(int $page = 1, int $limit = 5): array
+    {
+        $normalizedLimit = max(1, min(100, $limit));
+        $countStmt = $this->db->query('SELECT COUNT(*) FROM planning_submissions WHERE status <> "pending"');
+        $totalItems = intval($countStmt->fetchColumn() ?: 0);
+        $totalPages = max(1, (int) ceil($totalItems / $normalizedLimit));
+        $currentPage = min(max(1, $page), $totalPages);
+        $offset = ($currentPage - 1) * $normalizedLimit;
+
+        $stmt = $this->db->prepare(
+            'SELECT
+                s.id,
+                f.nom AS formateur_nom,
+                COALESCE(s.snapshot_total_hours, s.submitted_hours) AS submitted_hours,
+                s.status,
+                s.processed_at
+             FROM planning_submissions s
+             INNER JOIN formateurs f ON f.id = s.formateur_id
+             WHERE s.status <> "pending"
+             ORDER BY s.processed_at DESC
+             LIMIT :limit OFFSET :offset'
+        );
+        $stmt->bindValue(':limit', $normalizedLimit, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return [
+            'data' => array_map(static function (array $row): array {
+                return [
+                    'id' => intval($row['id']),
+                    'formateur_nom' => $row['formateur_nom'],
+                    'submitted_hours' => round(floatval($row['submitted_hours']), 2),
+                    'status' => $row['status'],
+                    'processed_at' => $row['processed_at'],
+                ];
+            }, $stmt->fetchAll()),
+            'total_items' => $totalItems,
+            'total_pages' => $totalPages,
+            'current_page' => $currentPage,
+            'limit' => $normalizedLimit,
+        ];
+    }
+
     public function getValidationQueue(array $filters = []): array
     {
         $dataset = $this->buildValidationDataset($filters);
 
         return $dataset['queue'];
+    }
+
+    public function getValidationQueuePaginated(int $page = 1, int $limit = 5, array $filters = []): array
+    {
+        $dataset = $this->buildValidationDataset($filters);
+
+        return $this->paginateArray($dataset['queue'], $page, $limit);
     }
 
     public function getValidationMatrix(array $filters = []): array
@@ -970,9 +1113,11 @@ class PlanningRepository
         $sql = sprintf(
             'UPDATE planning_submissions
              SET status = ?,
+                 reviewed_at = NOW(),
                  processed_at = NOW(),
                  processed_by = ?,
-                 decision_note = ?
+                 decision_note = ?,
+                 updated_at = NOW()
              WHERE id IN (%s)',
             $placeholders
         );
@@ -1125,6 +1270,93 @@ class PlanningRepository
         $stmt->execute($params);
 
         return array_map(fn (array $row): array => $this->normalizeSessionRow($row), $stmt->fetchAll());
+    }
+
+    public function listSessionsPaginated(int $page = 1, int $limit = 5, array $filters = []): array
+    {
+        $normalizedLimit = max(1, min(100, $limit));
+        $baseSql = 'FROM planning_sessions s
+                    INNER JOIN formateurs f ON f.id = s.formateur_id
+                    INNER JOIN modules m ON m.id = s.module_id
+                    LEFT JOIN groupes g ON g.id = s.groupe_id
+                    LEFT JOIN salles r ON r.id = s.salle_id
+                    WHERE 1 = 1';
+        $params = [];
+
+        if (!empty($filters['formateur_id'])) {
+            $baseSql .= ' AND s.formateur_id = :formateur_id';
+            $params['formateur_id'] = intval($filters['formateur_id']);
+        }
+
+        if (!empty($filters['week_number'])) {
+            $baseSql .= ' AND s.week_number = :week_number';
+            $params['week_number'] = intval($filters['week_number']);
+        }
+
+        $countStmt = $this->db->prepare('SELECT COUNT(*) ' . $baseSql);
+        $countStmt->execute($params);
+        $totalItems = intval($countStmt->fetchColumn() ?: 0);
+        $summaryStmt = $this->db->prepare(
+            'SELECT
+                COALESCE(SUM(TIMESTAMPDIFF(MINUTE, s.start_time, s.end_time)), 0) / 60 AS total_hours,
+                COUNT(DISTINCT s.groupe_id) AS active_groups,
+                COUNT(DISTINCT s.formateur_id) AS active_formateurs
+             ' . $baseSql
+        );
+        $summaryStmt->execute($params);
+        $summaryRow = $summaryStmt->fetch() ?: [];
+        $totalPages = max(1, (int) ceil($totalItems / $normalizedLimit));
+        $currentPage = min(max(1, $page), $totalPages);
+        $offset = ($currentPage - 1) * $normalizedLimit;
+
+        $sql = 'SELECT
+                    s.id,
+                    s.formateur_id,
+                    f.nom AS formateur_nom,
+                    s.module_id,
+                    m.intitule AS module_nom,
+                    COALESCE(m.code, CONCAT("M", LPAD(m.id, 3, "0"))) AS module_code,
+                    s.groupe_id,
+                    g.code AS groupe_code,
+                    g.nom AS groupe_nom,
+                    s.salle_id,
+                    r.code AS salle_code,
+                    COALESCE(r.nom, r.code) AS salle_nom,
+                    s.week_number,
+                    s.day_of_week,
+                    s.start_time,
+                    s.end_time,
+                    s.session_date,
+                    s.status,
+                    s.task_title,
+                    s.task_description,
+                    s.created_at,
+                    s.updated_at
+                ' . $baseSql . '
+                ORDER BY s.day_of_week, s.start_time, f.nom, m.intitule
+                LIMIT :limit OFFSET :offset';
+
+        $stmt = $this->db->prepare($sql);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue(':' . $key, $value, PDO::PARAM_INT);
+        }
+        $stmt->bindValue(':limit', $normalizedLimit, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return [
+            'data' => array_map(fn (array $row): array => $this->normalizeSessionRow($row), $stmt->fetchAll()),
+            'total_items' => $totalItems,
+            'total_pages' => $totalPages,
+            'current_page' => $currentPage,
+            'limit' => $normalizedLimit,
+            'summary' => [
+                'planned_courses' => $totalItems,
+                'programmed_hours' => round(floatval($summaryRow['total_hours'] ?? 0), 2),
+                'active_groups' => intval($summaryRow['active_groups'] ?? 0),
+                'active_formateurs' => intval($summaryRow['active_formateurs'] ?? 0),
+            ],
+        ];
     }
 
     public function findSession(int $id): ?array

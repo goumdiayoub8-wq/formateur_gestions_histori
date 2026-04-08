@@ -29,8 +29,18 @@ if ($method === 'GET' && $action === 'modules-questionnaires') {
     return;
 }
 
+if ($method === 'GET' && $action === 'module-preferences') {
+    $controller->getModulePreferences();
+    return;
+}
+
 if ($method === 'GET' && $child === 'modules-questionnaires') {
     $controller->getModulesQuestionnaires();
+    return;
+}
+
+if ($method === 'POST' && $action === 'module-preferences') {
+    $controller->submitModulePreferences();
     return;
 }
 

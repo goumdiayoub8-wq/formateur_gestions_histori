@@ -8,6 +8,8 @@ $method = requestMethod();
 $segments = routeSegmentsAfterRoot();
 $child = $segments[0] ?? null;
 
+requireAuth();
+
 if ($method === 'GET' && $child === null) {
     $controller->getQuestionnaire();
     return;

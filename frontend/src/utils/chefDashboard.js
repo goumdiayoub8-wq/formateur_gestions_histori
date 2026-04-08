@@ -41,6 +41,30 @@ export function buildModuleCode(module) {
   return `M${String(id).padStart(3, '0')}`;
 }
 
+export function dedupeAssignedModules(modules = []) {
+  const seen = new Set();
+
+  return modules.filter((module) => {
+    const numericId = safeNumber(module?.id, NaN);
+    const normalizedCode = String(module?.code || '').trim();
+    const normalizedTitle = String(module?.intitule || '').trim();
+    const identity = Number.isFinite(numericId) && numericId > 0
+      ? `id:${numericId}`
+      : normalizedCode !== ''
+        ? `code:${normalizedCode}`
+        : normalizedTitle !== ''
+          ? `title:${normalizedTitle}`
+          : '';
+
+    if (identity === '' || seen.has(identity)) {
+      return false;
+    }
+
+    seen.add(identity);
+    return true;
+  });
+}
+
 function getAffectationsForYear(affectations = [], academicYear = null) {
   if (!academicYear) {
     return affectations;
@@ -143,11 +167,13 @@ export function buildTrainerStatsMap({
           : safeNumber(dashboardRow.questionnaire_percentage),
       module_count: trainerAffectations.length,
       efm_count: trainerAffectations.filter((row) => parseBooleanLike(row.has_efm)).length,
-      assigned_modules: trainerAffectations.map((row) => ({
-        id: safeNumber(row.module_id),
-        code: buildModuleCode(row),
-        intitule: row.module_intitule || row.intitule || '',
-      })),
+      assigned_modules: dedupeAssignedModules(
+        trainerAffectations.map((row) => ({
+          id: safeNumber(row.module_id),
+          code: buildModuleCode(row),
+          intitule: row.module_intitule || row.intitule || '',
+        })),
+      ),
       alerts: Array.isArray(dashboardRow?.alerts) ? dashboardRow.alerts : [],
     };
   });
@@ -157,10 +183,10 @@ export function buildTrainerStatsMap({
 
 export function buildFiliereSummaries(modules = []) {
   const colorSets = [
-    { badge: 'bg-[#8b5cf6]', text: 'text-[#8b5cf6]' },
-    { badge: 'bg-[#3b82f6]', text: 'text-[#3b82f6]' },
-    { badge: 'bg-[#10b981]', text: 'text-[#10b981]' },
-    { badge: 'bg-[#f97316]', text: 'text-[#f97316]' },
+    { badge: 'bg-violet-500', text: 'text-violet-600 dark:text-violet-300' },
+    { badge: 'bg-blue-500', text: 'text-blue-600 dark:text-blue-300' },
+    { badge: 'bg-emerald-500', text: 'text-emerald-600 dark:text-emerald-300' },
+    { badge: 'bg-amber-500', text: 'text-amber-600 dark:text-amber-300' },
   ];
   const grouped = new Map();
 

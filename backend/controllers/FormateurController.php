@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/../services/FormateurService.php';
 require_once __DIR__ . '/../services/DashboardService.php';
+require_once __DIR__ . '/../services/FormateurModulePreferenceService.php';
 require_once __DIR__ . '/../core/InputValidator.php';
 require_once __DIR__ . '/../core/helpers.php';
 
@@ -9,11 +10,32 @@ class FormateurController
 {
     private FormateurService $formateurs;
     private DashboardService $dashboard;
+    private FormateurModulePreferenceService $modulePreferences;
 
     public function __construct(PDO $db)
     {
         $this->formateurs = new FormateurService($db);
         $this->dashboard = new DashboardService($db);
+        $this->modulePreferences = new FormateurModulePreferenceService($db);
+    }
+
+    private function parseModuleIds(array $payload, bool $required = true): ?array
+    {
+        $moduleIds = $payload['module_ids'] ?? null;
+
+        if ($moduleIds === null) {
+            if ($required) {
+                throw new ValidationException('Le tableau des modules est obligatoire.');
+            }
+
+            return null;
+        }
+
+        if (!is_array($moduleIds)) {
+            throw new ValidationException('Le tableau des modules est invalide.');
+        }
+
+        return $moduleIds;
     }
 
     private function formateurPayload(array $payload): array
@@ -56,12 +78,30 @@ class FormateurController
 
     public function index(): void
     {
-        $rows = $this->formateurs->all();
+        $page = InputValidator::integer(
+            ['page' => requestQuery('page')],
+            'page',
+            'page',
+            false,
+            1
+        ) ?? 1;
+        $limit = InputValidator::integer(
+            ['limit' => requestQuery('limit')],
+            'limit',
+            'limit',
+            false,
+            1,
+            100
+        ) ?? 5;
+        $search = trim((string) (requestQuery('search') ?? requestQuery('q') ?? ''));
+        $payload = $this->formateurs->paginate($page, $limit, $search);
+        $rows = $payload['data'];
 
         jsonResponse([
-            'status' => 'success',
             'data' => $rows,
-            'formateurs' => $rows,
+            'total_items' => $payload['total_items'],
+            'total_pages' => $payload['total_pages'],
+            'current_page' => $payload['current_page'],
         ]);
     }
 
@@ -162,12 +202,79 @@ class FormateurController
     {
         $userId = requireRole([3]);
         $formateur = $this->formateurs->findByUserId($userId);
-        $rows = $this->formateurs->moduleQuestionnaires(intval($formateur['id']), currentAcademicYear());
+        $page = InputValidator::integer(['page' => requestQuery('page')], 'page', 'page', false, 1) ?? 1;
+        $limit = InputValidator::integer(['limit' => requestQuery('limit')], 'limit', 'limit', false, 1, 100) ?? 5;
+        $payload = $this->formateurs->moduleQuestionnairesPaginate(intval($formateur['id']), currentAcademicYear(), $page, $limit);
+
+        jsonResponse([
+            'data' => $payload['data'],
+            'total_items' => $payload['total_items'],
+            'total_pages' => $payload['total_pages'],
+            'current_page' => $payload['current_page'],
+        ]);
+    }
+
+    public function getModulePreferences(): void
+    {
+        $userId = requireRole([3]);
+        $formateur = $this->formateurs->findByUserId($userId);
+        $payload = $this->modulePreferences->getFormateurPreferences(intval($formateur['id']));
 
         jsonResponse([
             'status' => 'success',
-            'data' => $rows,
-            'modules_questionnaires' => $rows,
+            'data' => $payload,
+            'preferences' => $payload,
+        ]);
+    }
+
+    public function submitModulePreferences(): void
+    {
+        $userId = requireRole([3]);
+        $formateur = $this->formateurs->findByUserId($userId);
+        $payload = readJsonBody();
+        $preferences = $this->modulePreferences->submitFormateurPreferences(
+            intval($formateur['id']),
+            $this->parseModuleIds($payload)
+        );
+
+        jsonResponse([
+            'status' => 'success',
+            'message' => 'Preferences modules enregistrees.',
+            'data' => $preferences,
+            'preferences' => $preferences,
+        ]);
+    }
+
+    public function getTrainerModulePreferences(int $formateurId): void
+    {
+        $payload = $this->modulePreferences->getTrainerPreferenceReview($formateurId);
+
+        jsonResponse([
+            'status' => 'success',
+            'data' => $payload,
+            'preferences' => $payload,
+        ]);
+    }
+
+    public function reviewTrainerModulePreferences(int $formateurId): void
+    {
+        $payload = readJsonBody();
+        $decisionStatus = InputValidator::oneOf($payload, 'status', 'statut', ['accepted', 'rejected']);
+        $decisionMessage = InputValidator::string($payload, 'message', 'message', false, 500);
+
+        $result = $this->modulePreferences->reviewTrainerPreferences(
+            $formateurId,
+            $this->parseModuleIds($payload, false),
+            $decisionStatus,
+            $decisionMessage
+        );
+
+        jsonResponse([
+            'status' => 'success',
+            'message' => 'Preferences modules traitees.',
+            'data' => $result,
+            'preferences' => $result,
+            'decision' => $result['decision'] ?? null,
         ]);
     }
 

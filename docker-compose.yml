@@ -8,8 +8,6 @@ services:
       MYSQL_PASSWORD: app
       MYSQL_ROOT_PASSWORD: root
     ports:
-      # Host port 3306 is already used on this machine, so MySQL is published on 3307 instead.
-      # Containers still talk to the database through db:3306 on the internal Docker network.
       - "3307:3306"
     volumes:
       - db_data:/var/lib/mysql
@@ -25,13 +23,11 @@ services:
       context: ./backend
     container_name: gestion-formateurs-backend
     environment:
-      # The backend connects to MySQL through Docker service discovery, not through the host-mapped port.
       DB_HOST: db
       DB_PORT: 3306
       DB_NAME: gestion_formateurs
       DB_USER: app
       DB_PASSWORD: app
-      # Reset links must point to the Vite dev server exposed on the host.
       APP_FRONTEND_URL: http://localhost:5173
       APP_DEBUG: "false"
       SMTP_HOST: smtp.gmail.com
@@ -44,8 +40,7 @@ services:
       db:
         condition: service_healthy
     ports:
-      # The API is exposed on host port 8000 for direct testing; the frontend reaches it internally as http://backend.
-      - "8000:80"
+      - "8001:80"
 
   frontend:
     build:
@@ -54,20 +49,14 @@ services:
     container_name: gestion-formateurs-frontend
     working_dir: /app
     environment:
-      # Vite proxies API calls to the backend service over Docker's internal network.
       VITE_API_PROXY_TARGET: http://backend
-      # Polling keeps hot reload reliable when files are mounted from the host into Docker.
       CHOKIDAR_USEPOLLING: "true"
     depends_on:
       - backend
     volumes:
-      # Mount the frontend source so code changes are visible immediately inside the container.
-      # The :Z suffix relabels the bind mount for SELinux hosts, otherwise Vite cannot read package.json.
       - ./frontend:/app:Z
-      # Keep container dependencies in a separate volume so the source mount does not overwrite node_modules.
       - /app/node_modules
     ports:
-      # Vite is exposed directly on 5173 for browser refresh, HMR, and phone access on the local network.
       - "5173:5173"
 
 volumes:

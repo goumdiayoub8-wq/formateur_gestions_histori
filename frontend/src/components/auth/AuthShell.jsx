@@ -5,9 +5,9 @@ import ofpptLogo from '../../style/photos/logo1 (1).png';
 
 export default function AuthShell({ title, subtitle, children }) {
   return (
-    <div className="min-h-screen bg-[#edf5fd] p-3 sm:p-5 lg:p-6">
-      <div className="mx-auto flex min-h-[calc(100vh-1.5rem)] max-w-[1920px] overflow-hidden rounded-[30px] bg-white shadow-[0_24px_90px_rgba(37,99,235,0.18)] sm:min-h-[calc(100vh-2.5rem)]">
-        <section className="relative hidden w-[42%] overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.22),_transparent_22%),linear-gradient(180deg,_#2e5f86_0%,_#4d84c6_58%,_#35b6ee_100%)] px-10 py-16 text-white lg:flex lg:flex-col">
+    <div className="theme-auth-shell min-h-screen p-3 sm:p-5 lg:p-6">
+      <div className="theme-auth-panel mx-auto flex min-h-[calc(100vh-1.5rem)] max-w-[1920px] overflow-hidden rounded-[30px] sm:min-h-[calc(100vh-2.5rem)]">
+        <section className="theme-auth-hero relative hidden w-[42%] overflow-hidden px-10 py-16 text-white lg:flex lg:flex-col">
           <div className="absolute right-16 top-16 h-28 w-28 rounded-[30px] bg-white/12 [clip-path:polygon(25%_6%,75%_6%,100%_28%,100%_72%,75%_94%,25%_94%,0_72%,0_28%)]" />
           <div className="absolute bottom-16 left-12 h-20 w-20 rounded-[28px] bg-white/10 [clip-path:polygon(25%_6%,75%_6%,100%_28%,100%_72%,75%_94%,25%_94%,0_72%,0_28%)]" />
 
@@ -33,13 +33,13 @@ export default function AuthShell({ title, subtitle, children }) {
             </div>
 
             <div className="mb-10 text-center">
-              <h2 className="text-[56px] font-bold tracking-[-0.03em] text-[#1f5588] sm:text-[64px]">{title}</h2>
-              <p className="mt-4 text-[24px] text-[#71829f] sm:text-[26px]">{subtitle}</p>
+              <h2 className="theme-auth-title text-[56px] font-bold tracking-[-0.03em] sm:text-[64px]">{title}</h2>
+              <p className="theme-auth-subtitle mt-4 text-[24px] sm:text-[26px]">{subtitle}</p>
             </div>
 
             {children}
 
-            <p className="mt-8 text-center text-[15px] text-[#7b8aa2]">
+            <p className="theme-auth-muted mt-8 text-center text-[15px]">
               Plateforme EduPlan v1.0 - Institut de Formation
             </p>
           </div>

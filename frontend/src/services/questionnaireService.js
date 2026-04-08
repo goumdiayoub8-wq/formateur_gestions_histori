@@ -7,8 +7,8 @@ function buildQuestionnaireRequestKey(prefix, formateurId, token) {
   return `${prefix}:${normalizedFormateurId}:${normalizedToken}`;
 }
 
-const QuestionnaireService = {
-  getEvaluationForm(options = {}) {
+const questionnaireService = {
+  fetchQuestionnaire(options = {}) {
     const { formateurId = null, token = '' } = options;
     const requestKey = buildQuestionnaireRequestKey('questionnaire:form', formateurId, token);
 
@@ -26,7 +26,7 @@ const QuestionnaireService = {
     });
   },
 
-  submitEvaluationForm(payload, options = {}) {
+  submitQuestionnaire(payload, options = {}) {
     const { token = '' } = options;
     const normalizedToken = `${token || ''}`.trim();
 
@@ -45,24 +45,6 @@ const QuestionnaireService = {
       return response;
     });
   },
-
-  getEvaluationScore(options = {}) {
-    const { formateurId = null, token = '' } = options;
-    const requestKey = buildQuestionnaireRequestKey('questionnaire:score', formateurId, token);
-
-    return apiRequest({
-      url: '/questionnaire/score',
-      method: 'get',
-      params: {
-        ...(formateurId ? { formateur_id: formateurId } : {}),
-        ...(token ? { token } : {}),
-      },
-    }, {
-      dedupeKey: requestKey,
-      cacheKey: requestKey,
-      cacheTtlMs: 10000,
-    });
-  },
 };
 
-export default QuestionnaireService;
+export default questionnaireService;

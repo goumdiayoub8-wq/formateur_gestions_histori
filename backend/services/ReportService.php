@@ -7,6 +7,8 @@ require_once __DIR__ . '/../core/HttpException.php';
 class ReportService
 {
     private const EXCEL_EXTENSION = 'xls';
+    private const PDF_MEMORY_LIMIT = '768M';
+    private const PDF_DPI = 96;
 
     private PDO $db;
     private ReportRepository $reports;
@@ -976,11 +978,14 @@ class ReportService
         try {
             $data = $this->buildPdfData($title, $sections, $summary, $subtitle);
             $html = $this->buildPdfHtml($data);
-            $dompdf = new \Dompdf\Dompdf();
+            $options = $this->buildPdfOptions();
+            $dompdf = new \Dompdf\Dompdf($options);
             $dompdf->loadHtml($html, 'UTF-8');
             $dompdf->setPaper('A4', 'landscape');
             $dompdf->render();
             $contents = $dompdf->output();
+            unset($dompdf, $options, $html, $data);
+            gc_collect_cycles();
         } catch (Throwable $exception) {
             throw new HttpException(500, 'La generation du PDF a echoue.');
         }
@@ -1018,6 +1023,61 @@ class ReportService
                 'Generation PDF indisponible car DomPDF n est pas disponible.'
             );
         }
+
+        $this->ensurePdfMemoryLimit();
+    }
+
+    private function buildPdfOptions(): \Dompdf\Options
+    {
+        $cacheDir = __DIR__ . '/../storage/cache/dompdf';
+        if (!is_dir($cacheDir)) {
+            @mkdir($cacheDir, 0775, true);
+        }
+
+        return new \Dompdf\Options([
+            'tempDir' => $cacheDir,
+            'fontDir' => $cacheDir,
+            'fontCache' => $cacheDir,
+            'chroot' => dirname(__DIR__),
+            'defaultFont' => 'DejaVu Sans',
+            'isRemoteEnabled' => false,
+            'isHtml5ParserEnabled' => true,
+            'dpi' => self::PDF_DPI,
+        ]);
+    }
+
+    private function ensurePdfMemoryLimit(): void
+    {
+        $currentLimit = $this->memoryLimitToBytes(ini_get('memory_limit'));
+        $requiredLimit = $this->memoryLimitToBytes(self::PDF_MEMORY_LIMIT);
+
+        if ($currentLimit === -1 || $currentLimit >= $requiredLimit) {
+            return;
+        }
+
+        @ini_set('memory_limit', self::PDF_MEMORY_LIMIT);
+    }
+
+    private function memoryLimitToBytes(string|false $value): int
+    {
+        if ($value === false || $value === '') {
+            return 0;
+        }
+
+        $normalized = trim($value);
+        if ($normalized === '-1') {
+            return -1;
+        }
+
+        $unit = strtolower(substr($normalized, -1));
+        $number = (float) $normalized;
+
+        return match ($unit) {
+            'g' => (int) round($number * 1024 * 1024 * 1024),
+            'm' => (int) round($number * 1024 * 1024),
+            'k' => (int) round($number * 1024),
+            default => (int) round($number),
+        };
     }
 
     private function buildPdfData(string $title, array $sections, array $summary, string $subtitle): array

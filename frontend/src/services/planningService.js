@@ -3,18 +3,27 @@ import { apiRequest, invalidateApiCache } from './api';
 const PLANNING_BASE = '/planning';
 
 const PlanningService = {
-  getWeeklyPlanning(week, formateurId = null) {
-    const key = `planning:weekly:${week ?? 'current'}:${formateurId ?? 'all'}`;
+  listPaginated({ page = 1, limit = 5, search = '', ...filters } = {}) {
+    const normalizedSearch = search.trim();
+    const params = {
+      page,
+      limit,
+      ...filters,
+      ...(normalizedSearch ? { search: normalizedSearch } : {}),
+    };
+
     return apiRequest(
       {
-        url: `${PLANNING_BASE}?action=weekly`,
+        url: PLANNING_BASE,
         method: 'get',
-        params: {
-          ...(typeof week === 'number' ? { week } : {}),
-          ...(formateurId ? { formateur_id: formateurId } : {}),
-        },
+        params,
       },
-      { dedupeKey: key, cacheKey: key, cacheTtlMs: 15000 },
+      {
+        raw: true,
+        dedupeKey: `planning:paginated:${JSON.stringify(params)}`,
+        cacheKey: `planning:paginated:${JSON.stringify(params)}`,
+        cacheTtlMs: 10000,
+      },
     );
   },
 
@@ -33,45 +42,71 @@ const PlanningService = {
     );
   },
 
-  getTrainerVisibility(week, formateurId = null) {
-    const key = `planning:visibility:${week ?? 'current'}:${formateurId ?? 'self'}`;
+  getTrainerVisibilityPage({ week, formateurId = null, page = 1, limit = 5 } = {}) {
+    const params = {
+      page,
+      limit,
+      ...(typeof week === 'number' ? { week } : {}),
+      ...(formateurId ? { formateur_id: formateurId } : {}),
+    };
+
     return apiRequest(
       {
         url: `${PLANNING_BASE}?action=visibility`,
         method: 'get',
-        params: {
-          ...(typeof week === 'number' ? { week } : {}),
-          ...(formateurId ? { formateur_id: formateurId } : {}),
-        },
+        params,
       },
-      { dedupeKey: key, cacheKey: key, cacheTtlMs: 15000 },
+      {
+        raw: true,
+        dedupeKey: `planning:visibility-page:${JSON.stringify(params)}`,
+        cacheKey: `planning:visibility-page:${JSON.stringify(params)}`,
+        cacheTtlMs: 10000,
+      },
     );
   },
 
-  getTeamVisibility(week) {
-    const key = `planning:team-visibility:${week ?? 'current'}`;
+  getTeamVisibilityPage({ week, page = 1, limit = 5 } = {}) {
+    const params = {
+      page,
+      limit,
+      ...(typeof week === 'number' ? { week } : {}),
+    };
+
     return apiRequest(
       {
         url: `${PLANNING_BASE}?action=team-visibility`,
         method: 'get',
-        params: typeof week === 'number' ? { week } : undefined,
+        params,
       },
-      { dedupeKey: key, cacheKey: key, cacheTtlMs: 15000 },
+      {
+        raw: true,
+        dedupeKey: `planning:team-visibility-page:${JSON.stringify(params)}`,
+        cacheKey: `planning:team-visibility-page:${JSON.stringify(params)}`,
+        cacheTtlMs: 10000,
+      },
     );
   },
 
-  getSessions(week, formateurId = null) {
-    const key = `planning:sessions:${week ?? 'current'}:${formateurId ?? 'all'}`;
+  getSessionsPage({ week, formateurId = null, page = 1, limit = 5 } = {}) {
+    const params = {
+      page,
+      limit,
+      ...(typeof week === 'number' ? { week } : {}),
+      ...(formateurId ? { formateur_id: formateurId } : {}),
+    };
+
     return apiRequest(
       {
         url: `${PLANNING_BASE}?action=sessions`,
         method: 'get',
-        params: {
-          ...(typeof week === 'number' ? { week } : {}),
-          ...(formateurId ? { formateur_id: formateurId } : {}),
-        },
+        params,
       },
-      { dedupeKey: key, cacheKey: key, cacheTtlMs: 15000 },
+      {
+        raw: true,
+        dedupeKey: `planning:sessions-page:${JSON.stringify(params)}`,
+        cacheKey: `planning:sessions-page:${JSON.stringify(params)}`,
+        cacheTtlMs: 10000,
+      },
     );
   },
 
@@ -107,7 +142,7 @@ const PlanningService = {
     return apiRequest(
       {
         url: `${PLANNING_BASE}?action=delete-entry`,
-        method: 'delete',
+        method: 'post',
         data: { id, session: true },
       },
       { raw: true },
@@ -132,43 +167,19 @@ const PlanningService = {
     });
   },
 
-  saveWeeklyEntry(payload) {
-    return apiRequest({
-      url: `${PLANNING_BASE}?action=entry`,
-      method: 'post',
-      data: payload,
-    }).then((response) => {
-      invalidateApiCache('planning:');
-      invalidateApiCache('dashboard:');
-      invalidateApiCache('formateur:notifications');
-      return response;
-    });
-  },
-
-  deleteWeeklyEntry(id) {
-    return apiRequest(
-      {
-        url: `${PLANNING_BASE}?action=delete-entry`,
-        method: 'delete',
-        data: { id },
-      },
-      { raw: true },
-    ).then((response) => {
-      invalidateApiCache('planning:');
-      invalidateApiCache('dashboard:');
-      invalidateApiCache('formateur:notifications');
-      return response;
-    });
-  },
-
-  getMesModules(week) {
+  getMesModules({ week, page = 1, limit = 5 } = {}) {
+    const key = `planning:mes-modules:${week ?? 'current'}:${page}:${limit}`;
     return apiRequest(
       {
         url: `${PLANNING_BASE}?action=mes-modules`,
         method: 'get',
-        params: typeof week === 'number' ? { week } : undefined,
+        params: {
+          page,
+          limit,
+          ...(typeof week === 'number' ? { week } : {}),
+        },
       },
-      { dedupeKey: `planning:mes-modules:${week ?? 'current'}` },
+      { dedupeKey: key, cacheKey: key, cacheTtlMs: 15000 },
     );
   },
 
@@ -181,21 +192,6 @@ const PlanningService = {
       invalidateApiCache('planning:');
       invalidateApiCache('formateur:notifications');
       return response;
-    });
-  },
-
-  getEntry(id) {
-    return apiRequest({
-      url: `${PLANNING_BASE}/${id}`,
-      method: 'get',
-    });
-  },
-
-  getValidationDashboard(filters = {}) {
-    return apiRequest({
-      url: `${PLANNING_BASE}?action=validation-dashboard`,
-      method: 'get',
-      params: filters,
     });
   },
 
@@ -213,35 +209,55 @@ const PlanningService = {
     );
   },
 
-  getValidationHistory(limit = 5) {
+  getValidationHistoryPage({ page = 1, limit = 5 } = {}) {
+    const params = { page, limit };
+
     return apiRequest(
       {
         url: `${PLANNING_BASE}?action=validation-history`,
         method: 'get',
-        params: { limit },
+        params,
       },
       {
-        dedupeKey: `planning:validation-history:${limit}`,
-        cacheKey: `planning:validation-history:${limit}`,
+        raw: true,
+        dedupeKey: `planning:validation-history-page:${page}:${limit}`,
+        cacheKey: `planning:validation-history-page:${page}:${limit}`,
         cacheTtlMs: 15000,
       },
     );
   },
 
-  getValidationQueue(filters = {}) {
-    return apiRequest({
-      url: `${PLANNING_BASE}?action=validation-queue`,
-      method: 'get',
-      params: filters,
-    });
+  getValidationQueuePage({ page = 1, limit = 5, ...filters } = {}) {
+    const params = { page, limit, ...filters };
+
+    return apiRequest(
+      {
+        url: `${PLANNING_BASE}?action=validation-queue`,
+        method: 'get',
+        params,
+      },
+      {
+        raw: true,
+        dedupeKey: `planning:validation-queue-page:${JSON.stringify(params)}`,
+        cacheKey: `planning:validation-queue-page:${JSON.stringify(params)}`,
+        cacheTtlMs: 10000,
+      },
+    );
   },
 
   getValidationDetail(id) {
-    return apiRequest({
-      url: `${PLANNING_BASE}?action=validation-detail`,
-      method: 'get',
-      params: { id },
-    });
+    return apiRequest(
+      {
+        url: `${PLANNING_BASE}?action=validation-detail`,
+        method: 'get',
+        params: { id },
+      },
+      {
+        dedupeKey: `planning:validation-detail:${id}`,
+        cacheKey: `planning:validation-detail:${id}`,
+        cacheTtlMs: 10000,
+      },
+    );
   },
 
   updateValidationStatus(planningId, status, note = '') {

@@ -37,71 +37,134 @@ class FormateurRepository
                 0 AS weekly_hours_target,';
     }
 
-    public function all(): array
+    private function baseSelect(string $alias = 'f'): string
     {
-        $questionnairePercentageExpression = resolvedTrainerQuestionnairePercentageExpression('f.id');
-        $questionnaireTotalScoreExpression = latestEvaluationScoreFieldExpression('f.id', 'total_score');
-        $questionnaireMaxScoreExpression = latestEvaluationScoreFieldExpression('f.id', 'max_score');
-        $questionnaireCreatedAtExpression = latestEvaluationScoreFieldExpression('f.id', 'created_at');
-        $stmt = $this->db->query(
-            'SELECT
-                f.id,
-                f.nom,
-                f.nom AS name,
-                f.email,
-                COALESCE(telephone, "") AS telephone,
-                f.specialite,
-                f.max_heures,
-                f.max_heures AS max_hours,
-                ' . $this->weeklyHoursSelect('f') . '
-                COALESCE(f.current_hours, 0) AS current_hours,
+        $questionnairePercentageExpression = resolvedTrainerQuestionnairePercentageExpression($alias . '.id');
+        $questionnaireTotalScoreExpression = latestEvaluationScoreFieldExpression($alias . '.id', 'total_score');
+        $questionnaireMaxScoreExpression = latestEvaluationScoreFieldExpression($alias . '.id', 'max_score');
+        $questionnaireCreatedAtExpression = latestEvaluationScoreFieldExpression($alias . '.id', 'created_at');
+
+        return 'SELECT
+                ' . $alias . '.id,
+                ' . $alias . '.nom,
+                ' . $alias . '.nom AS name,
+                ' . $alias . '.email,
+                COALESCE(' . $alias . '.telephone, "") AS telephone,
+                ' . $alias . '.specialite,
+                ' . $alias . '.max_heures,
+                ' . $alias . '.max_heures AS max_hours,
+                ' . $this->weeklyHoursSelect($alias) . '
+                COALESCE(' . $alias . '.current_hours, 0) AS current_hours,
                 CASE WHEN ' . $questionnaireTotalScoreExpression . ' IS NULL THEN NULL ELSE ROUND(' . $questionnaireTotalScoreExpression . ', 2) END AS questionnaire_total_score,
                 CASE WHEN ' . $questionnaireMaxScoreExpression . ' IS NULL THEN NULL ELSE ROUND(' . $questionnaireMaxScoreExpression . ', 2) END AS questionnaire_max_score,
                 CASE WHEN ' . $questionnairePercentageExpression . ' IS NULL THEN NULL ELSE ROUND(' . $questionnairePercentageExpression . ', 2) END AS questionnaire_percentage,
                 CASE WHEN ' . $questionnairePercentageExpression . ' IS NULL THEN NULL ELSE ROUND(' . $questionnairePercentageExpression . ', 2) END AS questionnaire_score,
                 ' . $questionnaireCreatedAtExpression . ' AS questionnaire_created_at,
-                f.created_at,
-                f.updated_at
-             FROM formateurs f
-             ORDER BY f.nom'
-        );
+                ' . $alias . '.created_at,
+                ' . $alias . '.updated_at
+             FROM formateurs ' . $alias;
+    }
+
+    private function searchCondition(string $alias = 'f'): string
+    {
+        return '(' . $alias . '.nom LIKE :search_nom
+            OR ' . $alias . '.email LIKE :search_email
+            OR ' . $alias . '.specialite LIKE :search_specialite)';
+    }
+
+    private function buildSearchBindings(string $search = ''): array
+    {
+        $searchValue = '%' . trim($search) . '%';
+
+        return [
+            'search_nom' => $searchValue,
+            'search_email' => $searchValue,
+            'search_specialite' => $searchValue,
+        ];
+    }
+
+    private function fetchRows(string $whereClause = '', array $params = [], ?int $limit = null, ?int $offset = null): array
+    {
+        $sql = $this->baseSelect('f');
+
+        if ($whereClause !== '') {
+            $sql .= ' WHERE ' . $whereClause;
+        }
+
+        $sql .= ' ORDER BY f.nom';
+
+        if ($limit !== null) {
+            $sql .= ' LIMIT :limit';
+        }
+
+        if ($offset !== null) {
+            $sql .= ' OFFSET :offset';
+        }
+
+        $stmt = $this->db->prepare($sql);
+
+        foreach ($params as $key => $value) {
+            $stmt->bindValue(':' . $key, $value);
+        }
+
+        if ($limit !== null) {
+            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        }
+
+        if ($offset !== null) {
+            $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        }
+
+        $stmt->execute();
 
         return $stmt->fetchAll();
     }
 
+    public function all(): array
+    {
+        return $this->fetchRows();
+    }
+
     public function find(int $id): ?array
     {
-        $questionnairePercentageExpression = resolvedTrainerQuestionnairePercentageExpression('f.id');
-        $questionnaireTotalScoreExpression = latestEvaluationScoreFieldExpression('f.id', 'total_score');
-        $questionnaireMaxScoreExpression = latestEvaluationScoreFieldExpression('f.id', 'max_score');
-        $questionnaireCreatedAtExpression = latestEvaluationScoreFieldExpression('f.id', 'created_at');
-        $stmt = $this->db->prepare(
-            'SELECT
-                f.id,
-                f.nom,
-                f.nom AS name,
-                f.email,
-                COALESCE(f.telephone, "") AS telephone,
-                f.specialite,
-                f.max_heures,
-                f.max_heures AS max_hours,
-                ' . $this->weeklyHoursSelect('f') . '
-                COALESCE(f.current_hours, 0) AS current_hours,
-                CASE WHEN ' . $questionnaireTotalScoreExpression . ' IS NULL THEN NULL ELSE ROUND(' . $questionnaireTotalScoreExpression . ', 2) END AS questionnaire_total_score,
-                CASE WHEN ' . $questionnaireMaxScoreExpression . ' IS NULL THEN NULL ELSE ROUND(' . $questionnaireMaxScoreExpression . ', 2) END AS questionnaire_max_score,
-                CASE WHEN ' . $questionnairePercentageExpression . ' IS NULL THEN NULL ELSE ROUND(' . $questionnairePercentageExpression . ', 2) END AS questionnaire_percentage,
-                CASE WHEN ' . $questionnairePercentageExpression . ' IS NULL THEN NULL ELSE ROUND(' . $questionnairePercentageExpression . ', 2) END AS questionnaire_score,
-                ' . $questionnaireCreatedAtExpression . ' AS questionnaire_created_at,
-                f.created_at,
-                f.updated_at
-             FROM formateurs f
-             WHERE f.id = :id
-             LIMIT 1'
-        );
-        $stmt->execute(['id' => $id]);
-        $row = $stmt->fetch();
+        $rows = $this->fetchRows('f.id = :id', ['id' => $id], 1, 0);
+        $row = $rows[0] ?? null;
 
         return $row ?: null;
+    }
+
+    public function paginate(int $page = 1, int $limit = 5, string $search = ''): array
+    {
+        $normalizedLimit = max(1, min(100, $limit));
+        $search = trim($search);
+        $countSql = 'SELECT COUNT(*) FROM formateurs f';
+        $params = [];
+        $whereClause = '';
+
+        if ($search !== '') {
+            $whereClause = $this->searchCondition('f');
+            $params = $this->buildSearchBindings($search);
+            $countSql .= ' WHERE ' . $whereClause;
+        }
+
+        $countStmt = $this->db->prepare($countSql);
+        foreach ($params as $key => $value) {
+            $countStmt->bindValue(':' . $key, $value);
+        }
+        $countStmt->execute();
+
+        $totalItems = intval($countStmt->fetchColumn() ?: 0);
+        $totalPages = max(1, (int) ceil($totalItems / $normalizedLimit));
+        $currentPage = max(1, min($page, $totalPages));
+        $offset = ($currentPage - 1) * $normalizedLimit;
+
+        return [
+            'data' => $this->fetchRows($whereClause, $params, $normalizedLimit, $offset),
+            'total_items' => $totalItems,
+            'total_pages' => $totalPages,
+            'current_page' => $currentPage,
+            'limit' => $normalizedLimit,
+        ];
     }
 
     public function findByEmail(string $email, ?int $ignoreId = null): ?array

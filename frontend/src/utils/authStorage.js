@@ -53,7 +53,7 @@ export function clearStoredAuth() {
     localStorage.removeItem(USER_KEY);
     localStorage.removeItem(TOKEN_KEY);
   } catch (error) {
-    // Ignore storage cleanup failures.
+    // Le nettoyage peut echouer sans impact
   }
 }
 
@@ -73,6 +73,6 @@ export function clearLoginPreferences() {
   try {
     localStorage.removeItem(LOGIN_PREFERENCES_KEY);
   } catch (error) {
-    // Ignore storage cleanup failures.
+    // Le nettoyage peut echouer sans impact
   }
 }

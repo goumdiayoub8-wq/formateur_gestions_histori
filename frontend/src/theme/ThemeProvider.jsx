@@ -1,65 +1,74 @@
-import React, { createContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import AuthService from '../services/authService';
 import { updateCurrentUser } from '../store/slices/authSlice';
-import { THEMES, applyThemeToDocument, getSystemTheme, isTheme, persistTheme, readStoredTheme } from './theme';
+import {
+  THEMES,
+  applyThemeToDocument,
+  getBootstrapTheme,
+  getSystemTheme,
+  isTheme,
+  persistGuestTheme,
+  readStoredTheme,
+} from './theme';
 
 export const ThemeContext = createContext(null);
-
-function getInitialTheme() {
-  const storedTheme = readStoredTheme();
-  return storedTheme || getSystemTheme();
-}
 
 export function ThemeProvider({ children }) {
   const dispatch = useDispatch();
   const user = useSelector((state) => state.auth.user);
-  const [theme, setThemeState] = useState(getInitialTheme);
-  const [hasStoredTheme, setHasStoredTheme] = useState(() => readStoredTheme() !== null);
+  const [theme, setThemeState] = useState(getBootstrapTheme);
   const [isSaving, setIsSaving] = useState(false);
   const lastSyncedThemeRef = useRef(null);
+  const pendingThemeRef = useRef(null);
   const animateNextThemeSwitchRef = useRef(false);
+  const previousUserRef = useRef(user);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const hadUser = Boolean(previousUserRef.current);
+    const hasUser = Boolean(user);
+    const storedTheme = readStoredTheme();
+    const backendTheme = isTheme(user?.theme_preference) ? user.theme_preference : null;
+    const preferredTheme = storedTheme || backendTheme;
+
+    if (backendTheme && backendTheme === theme && pendingThemeRef.current === theme) {
+      pendingThemeRef.current = null;
+      lastSyncedThemeRef.current = theme;
+    }
+
+    if (preferredTheme && preferredTheme !== theme && pendingThemeRef.current !== theme) {
+      lastSyncedThemeRef.current = backendTheme || preferredTheme;
+      previousUserRef.current = user;
+      setThemeState(preferredTheme);
+      return;
+    }
+
+    if (!hasUser && hadUser) {
+      lastSyncedThemeRef.current = null;
+      pendingThemeRef.current = null;
+      const fallbackTheme = storedTheme || getSystemTheme();
+      if (fallbackTheme !== theme) {
+        previousUserRef.current = user;
+        setThemeState(fallbackTheme);
+        return;
+      }
+    }
+
     applyThemeToDocument(theme, {
       withEffect: animateNextThemeSwitchRef.current,
     });
     animateNextThemeSwitchRef.current = false;
-    persistTheme(theme);
+
+    if (!hasUser) {
+      pendingThemeRef.current = null;
+    }
+
+    previousUserRef.current = user;
+  }, [theme, user]);
+
+  useEffect(() => {
+    persistGuestTheme(theme);
   }, [theme]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function' || hasStoredTheme) {
-      return undefined;
-    }
-
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleChange = (event) => {
-      setThemeState(event.matches ? THEMES.DARK : THEMES.LIGHT);
-    };
-
-    mediaQuery.addEventListener('change', handleChange);
-    return () => mediaQuery.removeEventListener('change', handleChange);
-  }, [hasStoredTheme]);
-
-  useEffect(() => {
-    if (!user) {
-      lastSyncedThemeRef.current = null;
-      return;
-    }
-
-    const backendTheme = isTheme(user.theme_preference) ? user.theme_preference : null;
-    if (!hasStoredTheme && backendTheme && backendTheme !== theme) {
-      setThemeState(backendTheme);
-      setHasStoredTheme(true);
-      lastSyncedThemeRef.current = backendTheme;
-      return;
-    }
-
-    if (backendTheme) {
-      lastSyncedThemeRef.current = backendTheme;
-    }
-  }, [hasStoredTheme, theme, user]);
 
   useEffect(() => {
     if (!user || !isTheme(theme)) {
@@ -83,6 +92,7 @@ export function ThemeProvider({ children }) {
         }
 
         lastSyncedThemeRef.current = theme;
+        pendingThemeRef.current = null;
         if (payload?.user) {
           dispatch(updateCurrentUser(payload.user));
         }
@@ -105,12 +115,12 @@ export function ThemeProvider({ children }) {
   }, [dispatch, theme, user]);
 
   const setTheme = (nextTheme) => {
-    if (!isTheme(nextTheme)) {
+    if (!isTheme(nextTheme) || nextTheme === theme) {
       return;
     }
 
+    pendingThemeRef.current = nextTheme;
     setThemeState(nextTheme);
-    setHasStoredTheme(true);
   };
 
   const toggleTheme = () => {

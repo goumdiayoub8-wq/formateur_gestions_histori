@@ -17,6 +17,31 @@ class QuestionnaireService
         $this->formateurs = new FormateurRepository($db);
     }
 
+    private function inTransaction(callable $callback)
+    {
+        $ownsTransaction = !$this->db->inTransaction();
+
+        if ($ownsTransaction) {
+            $this->db->beginTransaction();
+        }
+
+        try {
+            $result = $callback();
+
+            if ($ownsTransaction && $this->db->inTransaction()) {
+                $this->db->commit();
+            }
+
+            return $result;
+        } catch (Throwable $exception) {
+            if ($ownsTransaction && $this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+
+            throw $exception;
+        }
+    }
+
     private function resolveAccessibleToken(?int $formateurId, ?string $questionnaireToken): ?array
     {
         $normalizedToken = trim((string) $questionnaireToken);
@@ -120,7 +145,7 @@ class QuestionnaireService
         }
 
         if ($questionType === 'text') {
-            return 0.0;
+            return trim((string) $value) !== '' ? 5.0 : 0.0;
         }
 
         return floatval($this->normalizeStoredRating($value) ?? 0);
@@ -269,7 +294,7 @@ class QuestionnaireService
             'questions' => $models,
             'models' => $models,
             'score' => $score,
-            'can_submit' => $formateurId === null ? true : !$this->questionnaires->hasSubmitted($formateurId, $moduleId),
+            'can_submit' => !$this->questionnaires->hasSubmitted($formateurId, $moduleId),
             'existing_answers' => $existingAnswers,
         ];
     }
@@ -297,34 +322,40 @@ class QuestionnaireService
         $normalizedAnswers = $this->normalizeAnswers($questions, $answers);
         $score = $this->calculateScore($questions, $normalizedAnswers);
 
-        $this->db->beginTransaction();
-
         try {
-            foreach ($questions as $question) {
-                $questionId = intval($question['id']);
-                $value = $normalizedAnswers[$questionId] ?? '';
+            return $this->inTransaction(function () use ($questions, $normalizedAnswers, $formateurId, $moduleId, $score, $access, $questionnaireToken): array {
+                foreach ($questions as $question) {
+                    $questionId = intval($question['id']);
+                    $value = $normalizedAnswers[$questionId] ?? '';
 
-                $this->questionnaires->createAnswer($formateurId, $moduleId, $questionId, (string) $value);
-            }
+                    $this->questionnaires->createAnswer($formateurId, $moduleId, $questionId, (string) $value);
+                }
 
-            $createdScore = $this->questionnaires->createScore($formateurId, $moduleId, $score);
-            if ($moduleId !== null) {
-                $this->questionnaires->upsertFormateurModuleScore($formateurId, $moduleId, floatval($score['percentage'] ?? 0));
-            }
-            $this->db->commit();
+                $createdScore = $this->questionnaires->createScore($formateurId, $moduleId, $score);
+                if ($moduleId !== null) {
+                    $this->questionnaires->upsertFormateurModuleScore($formateurId, $moduleId, floatval($score['percentage'] ?? 0));
+                }
 
-            return $this->formatScore($createdScore) ?: [
-                'submitted' => true,
-                'total_score' => $score['total_score'],
-                'max_score' => $score['max_score'],
-                'percentage' => $score['percentage'],
-                'message' => $this->getPerformanceMessage($score['percentage']),
-                'tone' => $this->getPerformanceTone($score['percentage']),
-                'module_id' => $moduleId,
-            ];
-        } catch (Throwable $exception) {
-            if ($this->db->inTransaction()) {
-                $this->db->rollBack();
+                $formattedScore = $this->formatScore($createdScore) ?: [
+                    'submitted' => true,
+                    'total_score' => $score['total_score'],
+                    'max_score' => $score['max_score'],
+                    'percentage' => $score['percentage'],
+                    'message' => $this->getPerformanceMessage($score['percentage']),
+                    'tone' => $this->getPerformanceTone($score['percentage']),
+                    'module_id' => $moduleId,
+                ];
+
+                return array_merge($formattedScore, [
+                    'questionnaire_token' => trim((string) ($access['questionnaire_token'] ?? $access['questionnaire_id'] ?? $questionnaireToken)),
+                    'module_name' => $access['module_name'] ?? null,
+                    'module_code' => $access['module_code'] ?? null,
+                    'answer_count' => count($normalizedAnswers),
+                ]);
+            });
+        } catch (PDOException $exception) {
+            if ($exception->getCode() === '23000') {
+                throw new ConflictException('Ce questionnaire a deja ete soumis pour ce formateur.');
             }
 
             throw $exception;
@@ -363,6 +394,9 @@ class QuestionnaireService
 
         return $score ?: [
             'submitted' => false,
+            'formateur_id' => $formateurId,
+            'module_id' => $moduleId,
+            'questionnaire_token' => trim((string) ($access['questionnaire_token'] ?? $access['questionnaire_id'] ?? $questionnaireToken)),
             'total_score' => 0,
             'max_score' => 0,
             'percentage' => null,
@@ -434,7 +468,15 @@ class QuestionnaireService
 
         if ($questionType === 'text') {
             $normalized = trim((string) $value);
-            return $normalized !== '' ? $normalized : null;
+            if ($normalized === '') {
+                return null;
+            }
+
+            if (mb_strlen($normalized) > 2000) {
+                throw new ValidationException('Les reponses textuelles ne peuvent pas depasser 2000 caracteres.');
+            }
+
+            return $normalized;
         }
 
         $normalizedStored = $this->normalizeStoredRating($value);
@@ -449,11 +491,11 @@ class QuestionnaireService
     {
         $normalized = strtolower(trim((string) $value));
 
-        if (in_array($normalized, ['1', 'true', 'yes', 'oui'], true)) {
+        if (in_array($normalized, ['1', 'true', 'yes', 'oui', 'y', 'on'], true)) {
             return 'yes';
         }
 
-        if (in_array($normalized, ['0', 'false', 'no', 'non'], true)) {
+        if (in_array($normalized, ['0', 'false', 'no', 'non', 'n', 'off'], true)) {
             return 'no';
         }
 

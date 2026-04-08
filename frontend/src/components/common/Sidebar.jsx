@@ -1,7 +1,7 @@
-import React from 'react';
-import { NavLink } from 'react-router-dom';
-import { ChevronRight, GraduationCap, LogOut } from 'lucide-react';
-import casablancaSettatLogo from '../../style/photos/Casablanca-Settat_VF.png';
+import React from "react";
+import { NavLink } from "react-router-dom";
+import { ChevronRight, GraduationCap, LogOut } from "lucide-react";
+import casablancaSettatLogo from "../../style/photos/Casablanca-Settat_VF.png";
 
 function getAcademicYearLabel() {
   const now = new Date();
@@ -12,26 +12,39 @@ function getAcademicYearLabel() {
   return `${startYear} - ${startYear + 1}`;
 }
 
-export default function Sidebar({ items, roleKey, roleLabel, onLogout, onClose }) {
+export default function Sidebar({
+  items,
+  roleKey,
+  roleLabel,
+  onLogout,
+  onClose,
+}) {
   const academicYear = getAcademicYearLabel();
 
   return (
-    <aside className="theme-sidebar sticky top-0 flex h-screen flex-col overflow-hidden border-r">
-      <div className="theme-border border-b px-6 py-5">
+    <aside className="sticky top-0 flex h-screen flex-col overflow-hidden border-r border-slate-200 bg-white text-slate-900 backdrop-blur-none transition-colors duration-300 dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-100 dark:backdrop-blur-xl">
+      <div className="border-b border-slate-200 bg-white px-6 py-6 transition-colors duration-300 dark:border-white/10 dark:bg-slate-900/50 dark:shadow-none">
         <div className="flex flex-col items-center justify-center text-center">
-          <div className="theme-card-muted theme-border flex h-[76px] w-[76px] items-center justify-center overflow-hidden rounded-[22px] border shadow-[0_10px_26px_var(--color-shadow)]">
+          <div className="flex h-[76px] w-[76px] items-center justify-center overflow-hidden rounded-[22px] border border-slate-200 bg-slate-50 shadow-sm transition-colors duration-300 dark:border-white/10 dark:bg-slate-900/50 dark:shadow-none">
             <img
               src={casablancaSettatLogo}
               alt="Casablanca Settat"
               className="h-[62px] w-[62px] object-contain"
             />
           </div>
-          <p className="theme-text-muted mt-3 text-[9px] uppercase tracking-[0.24em]">Gestion des horaires</p>
-          <h2 className="theme-text-soft mt-1 text-[13px] font-semibold">{roleLabel}</h2>
+          <p className="mt-3 text-[9px] uppercase tracking-[0.24em] text-slate-600 transition-colors duration-300 dark:text-slate-400">
+            Gestion des horaires
+          </p>
+          <h2 className="mt-1 text-[13px] font-semibold text-slate-900 transition-colors duration-300 dark:text-slate-100">
+            {roleLabel}
+          </h2>
         </div>
       </div>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+      <nav
+        className="flex-1 space-y-1.5 overflow-y-auto px-4 py-5"
+        aria-label="Navigation principale"
+      >
         {items.map((item) => {
           const Icon = item.icon;
           return (
@@ -41,21 +54,23 @@ export default function Sidebar({ items, roleKey, roleLabel, onLogout, onClose }
               onClick={onClose}
               className={({ isActive }) =>
                 [
-                  'group flex items-center gap-3 text-sm transition-all duration-300',
-                  'rounded-[16px] px-3 py-3 font-medium',
+                  "group flex items-center gap-3 text-sm transition-all duration-300",
+                  "rounded-[16px] px-3 py-3 font-medium",
                   isActive
-                    ? 'bg-[#edf3ff] text-[#2453e5]'
-                    : 'theme-text-muted hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]',
-                ].join(' ')
+                    ? "border border-slate-200 bg-slate-100 text-slate-900 shadow-sm dark:bg-sky-400/10 dark:text-sky-300 dark:border-white/0"
+                    : "border border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-slate-100 dark:hover:border-white/0",
+                ].join(" ")
               }
             >
               {({ isActive }) => (
                 <>
-                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-[12px] text-[#5d78a0] transition-colors duration-300 group-hover:text-[#2d5cff]">
+                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-[12px] bg-slate-100 text-slate-500 transition-colors duration-300 group-hover:bg-white group-hover:text-blue-600 dark:bg-transparent dark:text-slate-500 dark:group-hover:text-sky-300">
                     <Icon className="h-4 w-4" />
                   </span>
                   <span className="flex-1">{item.label}</span>
-                  {isActive ? <ChevronRight className="theme-text-muted h-4 w-4" /> : null}
+                  {isActive ? (
+                    <ChevronRight className="h-4 w-4 text-slate-400 transition-colors duration-300 dark:text-slate-500" />
+                  ) : null}
                 </>
               )}
             </NavLink>
@@ -63,15 +78,19 @@ export default function Sidebar({ items, roleKey, roleLabel, onLogout, onClose }
         })}
       </nav>
 
-      <div className="theme-border sticky bottom-0 mt-6 space-y-3 border-t bg-transparent px-4 py-4">
-        <div className="theme-card-muted rounded-[18px] px-4 py-4">
+      <div className="sticky bottom-0 mt-6 space-y-3 border-t border-slate-200 bg-white px-4 py-4 transition-colors duration-300 dark:border-white/10 dark:bg-slate-900/40">
+        <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-4 shadow-sm backdrop-blur-none transition-colors duration-300 dark:border-white/10 dark:bg-slate-900/50 dark:shadow-none dark:backdrop-blur-xl">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-[12px] bg-white text-[#7561dd]">
+            <div className="flex h-9 w-9 items-center justify-center rounded-[12px] bg-blue-50 text-blue-600 transition-colors duration-300 dark:bg-sky-400/10 dark:text-sky-300">
               <GraduationCap className="h-4 w-4" />
             </div>
             <div>
-              <p className="theme-text-muted text-[10px] uppercase tracking-[0.24em]">Annee scolaire</p>
-              <p className="theme-text-soft mt-1 text-sm font-semibold">{academicYear}</p>
+              <p className="text-[10px] uppercase tracking-[0.24em] text-slate-600 transition-colors duration-300 dark:text-slate-400">
+                Annee scolaire
+              </p>
+              <p className="mt-1 text-sm font-semibold text-slate-900 transition-colors duration-300 dark:text-slate-100">
+                {academicYear}
+              </p>
             </div>
           </div>
         </div>
@@ -79,7 +98,7 @@ export default function Sidebar({ items, roleKey, roleLabel, onLogout, onClose }
         <button
           type="button"
           onClick={onLogout}
-          className="theme-border theme-text-soft flex w-full items-center justify-between border-t px-2 py-4 text-sm font-medium transition hover:text-[var(--color-text)]"
+          className="flex w-full items-center justify-between rounded-[16px] border border-transparent px-2 py-3 text-sm font-medium text-slate-900 transition duration-300 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-700 dark:border-white/0 dark:text-slate-100 dark:hover:border-white/10 dark:hover:bg-white/5 dark:hover:text-white"
         >
           <span className="flex items-center gap-3">
             <span className="inline-flex h-9 w-9 items-center justify-center rounded-[12px]">
@@ -87,7 +106,7 @@ export default function Sidebar({ items, roleKey, roleLabel, onLogout, onClose }
             </span>
             Deconnexion
           </span>
-          <ChevronRight className="theme-text-muted h-4 w-4" />
+          <ChevronRight className="h-4 w-4 text-slate-400 transition-colors duration-300 dark:text-slate-500" />
         </button>
       </div>
     </aside>

@@ -3,11 +3,17 @@
 require_once __DIR__ . '/core/helpers.php';
 require_once __DIR__ . '/core/InputValidator.php';
 require_once __DIR__ . '/core/AppLogger.php';
+require_once __DIR__ . '/core/SentryMonitor.php';
 require_once __DIR__ . '/config/env.php';
 
 loadEnvironment(__DIR__ . '/.env');
+SentryMonitor::init();
 
 $appDebug = filter_var(getenv('APP_DEBUG') ?: false, FILTER_VALIDATE_BOOL);
+
+// Renforce la securite des sessions
+ini_set('session.cookie_samesite', 'Strict');
+ini_set('session.cookie_httponly', '1');
 
 ini_set('display_errors', $appDebug ? '1' : '0');
 ini_set('display_startup_errors', $appDebug ? '1' : '0');
@@ -57,6 +63,10 @@ try {
         'message' => $exception->getMessage(),
         'file' => $exception->getFile(),
         'line' => $exception->getLine(),
+    ]);
+    SentryMonitor::captureException($exception, [
+        'method' => requestMethod(),
+        'path' => currentRequestPath(),
     ]);
 
     $payload = [

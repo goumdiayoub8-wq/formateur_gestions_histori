@@ -18,27 +18,27 @@ export default function AuthInput({
 
   return (
     <label className="block space-y-3" htmlFor={id}>
-      <span className="text-[14px] font-semibold text-[#1f2937]">{label}</span>
+      <span className="theme-text-soft text-[14px] font-semibold">{label}</span>
       <div
-        className={`flex h-[68px] items-center gap-4 rounded-[22px] border bg-white px-5 shadow-[0_4px_18px_rgba(30,64,175,0.05)] transition ${
-          error ? 'border-rose-300' : 'border-[#dfe5ef] focus-within:border-[#5b6bff]'
+        className={`theme-auth-input flex h-[68px] items-center gap-4 rounded-[22px] border px-5 transition ${
+          error ? 'border-rose-300' : 'focus-within:border-[color:var(--color-primary)] focus-within:ring-4 focus-within:ring-[color:var(--color-primary-soft)]'
         }`}
       >
-        {Icon ? <Icon className="h-6 w-6 shrink-0 text-[#6b7280]" /> : null}
+        {Icon ? <Icon className="theme-text-muted h-6 w-6 shrink-0" /> : null}
         <input
           id={id}
           type={inputType}
           value={value}
           onChange={(event) => onChange(event.target.value)}
           placeholder={placeholder}
-          className="h-full w-full bg-transparent text-[18px] text-[#1f2937] outline-none placeholder:text-[#9ca3af]"
+          className="h-full w-full bg-transparent text-[18px] text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-subtle)]"
           autoComplete={type === 'password' ? 'current-password' : 'email'}
         />
         {showToggle ? (
           <button
             type="button"
             onClick={onToggleVisibility}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full text-[#6b7280] transition hover:bg-slate-100"
+            className="theme-text-muted inline-flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
             aria-label={isPasswordVisible ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
           >
             {isPasswordVisible ? <EyeOff className="h-6 w-6" /> : <Eye className="h-6 w-6" />}

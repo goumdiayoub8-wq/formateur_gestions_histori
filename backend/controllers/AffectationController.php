@@ -15,16 +15,34 @@ class AffectationController
 
     public function index(): void
     {
-        $rows = $this->affectations->all([
+        $page = InputValidator::integer(
+            ['page' => requestQuery('page')],
+            'page',
+            'page',
+            false,
+            1
+        ) ?? 1;
+        $limit = InputValidator::integer(
+            ['limit' => requestQuery('limit')],
+            'limit',
+            'limit',
+            false,
+            1,
+            100
+        ) ?? 5;
+        $payload = $this->affectations->paginate($page, $limit, [
+            'search' => trim((string) (requestQuery('search') ?? requestQuery('q') ?? '')),
             'formateur_id' => requestQuery('formateur_id'),
             'module_id' => requestQuery('module_id'),
             'annee' => requestQuery('annee'),
         ]);
+        $rows = $payload['data'];
 
         jsonResponse([
-            'status' => 'success',
             'data' => $rows,
-            'affectations' => $rows,
+            'total_items' => $payload['total_items'],
+            'total_pages' => $payload['total_pages'],
+            'current_page' => $payload['current_page'],
         ]);
     }
 

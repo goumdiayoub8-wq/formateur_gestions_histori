@@ -4,6 +4,7 @@ require_once __DIR__ . '/../repositories/FormateurRepository.php';
 require_once __DIR__ . '/../repositories/QuestionnaireRepository.php';
 require_once __DIR__ . '/../repositories/UserRepository.php';
 require_once __DIR__ . '/../core/HttpException.php';
+require_once __DIR__ . '/../core/JsonCache.php';
 
 class FormateurService
 {
@@ -20,6 +21,23 @@ class FormateurService
         $this->users = new UserRepository($db);
     }
 
+    private function paginateArray(array $rows, int $page = 1, int $limit = 5): array
+    {
+        $normalizedLimit = max(1, min(100, $limit));
+        $totalItems = count($rows);
+        $totalPages = max(1, (int) ceil($totalItems / $normalizedLimit));
+        $currentPage = min(max(1, $page), $totalPages);
+        $offset = ($currentPage - 1) * $normalizedLimit;
+
+        return [
+            'data' => array_slice($rows, $offset, $normalizedLimit),
+            'total_items' => $totalItems,
+            'total_pages' => $totalPages,
+            'current_page' => $currentPage,
+            'limit' => $normalizedLimit,
+        ];
+    }
+
     public function all(): array
     {
         return array_map(function (array $row): array {
@@ -27,6 +45,24 @@ class FormateurService
 
             return $row;
         }, $this->formateurs->all());
+    }
+
+    public function paginate(int $page = 1, int $limit = 5, string $search = ''): array
+    {
+        $payload = $this->formateurs->paginate($page, $limit, $search);
+        $rows = array_map(function (array $row): array {
+            $row['hours'] = $this->formateurs->getHoursSummary(intval($row['id']));
+
+            return $row;
+        }, $payload['data'] ?? []);
+
+        return [
+            'data' => $rows,
+            'total_items' => intval($payload['total_items'] ?? 0),
+            'total_pages' => intval($payload['total_pages'] ?? 1),
+            'current_page' => intval($payload['current_page'] ?? 1),
+            'limit' => intval($payload['limit'] ?? $limit),
+        ];
     }
 
     public function find(int $id): array
@@ -62,6 +98,7 @@ class FormateurService
             ]);
 
             $this->db->commit();
+            JsonCache::forgetByPrefix('dashboard-');
 
             return $this->find($formateurId);
         } catch (Throwable $exception) {
@@ -109,6 +146,7 @@ class FormateurService
             }
 
             $this->db->commit();
+            JsonCache::forgetByPrefix('dashboard-');
 
             return $this->find($id);
         } catch (Throwable $exception) {
@@ -134,6 +172,7 @@ class FormateurService
             $this->users->deleteByFormateurId($id);
             $this->formateurs->delete($id);
             $this->db->commit();
+            JsonCache::forgetByPrefix('dashboard-');
         } catch (Throwable $exception) {
             if ($this->db->inTransaction()) {
                 $this->db->rollBack();
@@ -197,5 +236,14 @@ class FormateurService
                 'total_formateurs' => intval($rankingTotals[$moduleId] ?? 0),
             ];
         }, $rows);
+    }
+
+    public function moduleQuestionnairesPaginate(int $formateurId, int $academicYear, int $page = 1, int $limit = 5): array
+    {
+        return $this->paginateArray(
+            $this->moduleQuestionnaires($formateurId, $academicYear),
+            $page,
+            $limit,
+        );
     }
 }

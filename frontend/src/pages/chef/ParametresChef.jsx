@@ -81,7 +81,7 @@ export default function ParametresChef() {
         subtitle="Lecture de la configuration academique active pour piloter les affectations, l estimation hebdomadaire et le suivi de semestre."
         action={
           config?.academic_year_label ? (
-            <ChefBadge tone="violet">{config.academic_year_label}</ChefBadge>
+            <ChefBadge className="hover-badge" tone="violet">{config.academic_year_label}</ChefBadge>
           ) : null
         }
       />
@@ -95,17 +95,17 @@ export default function ParametresChef() {
       {config ? (
         <>
           <div className="grid gap-4 xl:grid-cols-3">
-            <div className="rounded-[24px] border border-[#dce6f3] bg-white px-5 py-5 shadow-[0_16px_34px_rgba(39,74,129,0.08)]">
-              <p className="text-sm text-[#71859e]">Debut annee</p>
-              <p className="mt-3 text-2xl font-bold text-[#1b2941]">{formatDate(config.start_date)}</p>
+            <div className="theme-card hover-card rounded-[24px] border px-5 py-5">
+              <p className="theme-text-muted text-sm">Debut annee</p>
+              <p className="theme-text-primary mt-3 text-2xl font-bold">{formatDate(config.start_date)}</p>
             </div>
-            <div className="rounded-[24px] border border-[#dce6f3] bg-white px-5 py-5 shadow-[0_16px_34px_rgba(39,74,129,0.08)]">
-              <p className="text-sm text-[#71859e]">Debut S2</p>
-              <p className="mt-3 text-2xl font-bold text-[#1b2941]">{formatDate(config.s2_start_date)}</p>
+            <div className="theme-card hover-card rounded-[24px] border px-5 py-5">
+              <p className="theme-text-muted text-sm">Debut S2</p>
+              <p className="theme-text-primary mt-3 text-2xl font-bold">{formatDate(config.s2_start_date)}</p>
             </div>
-            <div className="rounded-[24px] border border-[#dce6f3] bg-white px-5 py-5 shadow-[0_16px_34px_rgba(39,74,129,0.08)]">
-              <p className="text-sm text-[#71859e]">Fin annee</p>
-              <p className="mt-3 text-2xl font-bold text-[#1b2941]">{formatDate(config.end_date)}</p>
+            <div className="theme-card hover-card rounded-[24px] border px-5 py-5">
+              <p className="theme-text-muted text-sm">Fin annee</p>
+              <p className="theme-text-primary mt-3 text-2xl font-bold">{formatDate(config.end_date)}</p>
             </div>
           </div>
 
@@ -114,33 +114,33 @@ export default function ParametresChef() {
             subtitle="Ces dates sont utilisees pour les projections de charge et les regles de semestre visibles dans le dashboard Chef."
           >
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-[22px] border border-[#dce6f3] bg-[#fbfdff] px-5 py-5">
-                <div className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] bg-[#eef4ff] text-[#2451ff]">
+              <div className="theme-card-muted hover-card rounded-[22px] border border-[var(--color-border)] px-5 py-5">
+                <div className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] bg-blue-50 text-blue-600 transition-colors duration-300 dark:bg-blue-400/20 dark:text-blue-200">
                   <CalendarDays className="h-5 w-5" />
                 </div>
-                <p className="mt-4 text-sm text-[#7b8ea8]">Stage debut</p>
-                <p className="mt-2 text-lg font-semibold text-[#1b2941]">{formatDate(config.stage_start_date)}</p>
+                <p className="theme-text-muted mt-4 text-sm">Stage debut</p>
+                <p className="theme-text-primary mt-2 text-lg font-semibold">{formatDate(config.stage_start_date)}</p>
               </div>
-              <div className="rounded-[22px] border border-[#dce6f3] bg-[#fbfdff] px-5 py-5">
-                <div className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] bg-[#eefbf3] text-[#16a34a]">
+              <div className="theme-card-muted hover-card rounded-[22px] border border-[var(--color-border)] px-5 py-5">
+                <div className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] bg-emerald-50 text-emerald-600 transition-colors duration-300 dark:bg-emerald-400/20 dark:text-emerald-200">
                   <CalendarDays className="h-5 w-5" />
                 </div>
-                <p className="mt-4 text-sm text-[#7b8ea8]">Stage fin</p>
-                <p className="mt-2 text-lg font-semibold text-[#1b2941]">{formatDate(config.stage_end_date)}</p>
+                <p className="theme-text-muted mt-4 text-sm">Stage fin</p>
+                <p className="theme-text-primary mt-2 text-lg font-semibold">{formatDate(config.stage_end_date)}</p>
               </div>
-              <div className="rounded-[22px] border border-[#dce6f3] bg-[#fbfdff] px-5 py-5">
-                <div className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] bg-[#fff6ea] text-[#f97316]">
+              <div className="theme-card-muted hover-card rounded-[22px] border border-[var(--color-border)] px-5 py-5">
+                <div className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] bg-amber-50 text-amber-600 transition-colors duration-300 dark:bg-amber-400/20 dark:text-amber-200">
                   <CalendarDays className="h-5 w-5" />
                 </div>
-                <p className="mt-4 text-sm text-[#7b8ea8]">Examen regional</p>
-                <p className="mt-2 text-lg font-semibold text-[#1b2941]">{formatDate(config.exam_regional_date)}</p>
+                <p className="theme-text-muted mt-4 text-sm">Examen regional</p>
+                <p className="theme-text-primary mt-2 text-lg font-semibold">{formatDate(config.exam_regional_date)}</p>
               </div>
-              <div className="rounded-[22px] border border-[#dce6f3] bg-[#fbfdff] px-5 py-5">
-                <div className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] bg-[#f4efff] text-[#8b5cf6]">
+              <div className="theme-card-muted hover-card rounded-[22px] border border-[var(--color-border)] px-5 py-5">
+                <div className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] bg-violet-50 text-violet-600 transition-colors duration-300 dark:bg-violet-400/20 dark:text-violet-200">
                   <CalendarDays className="h-5 w-5" />
                 </div>
-                <p className="mt-4 text-sm text-[#7b8ea8]">Annee academique</p>
-                <p className="mt-2 text-lg font-semibold text-[#1b2941]">{config.academic_year_label}</p>
+                <p className="theme-text-muted mt-4 text-sm">Annee academique</p>
+                <p className="theme-text-primary mt-2 text-lg font-semibold">{config.academic_year_label}</p>
               </div>
             </div>
           </ChefSection>

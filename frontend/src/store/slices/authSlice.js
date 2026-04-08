@@ -37,6 +37,16 @@ export const login = createAsyncThunk(
 
 export const checkAuth = createAsyncThunk('auth/check', async (_, { rejectWithValue }) => {
   try {
+    const storedToken = getStoredToken();
+    const storedUser = getStoredUser();
+
+    if (!storedToken && !storedUser) {
+      return {
+        user: null,
+        token: '',
+      };
+    }
+
     const payload = await AuthService.check();
     return {
       user: payload.user ?? null,

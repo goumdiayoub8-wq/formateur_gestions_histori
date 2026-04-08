@@ -170,18 +170,18 @@ export default function Login() {
             }}
           />
 
-          <div className="flex flex-col gap-4 text-[15px] text-[#6c7b94] sm:flex-row sm:items-center sm:justify-between">
+          <div className="theme-text-muted flex flex-col gap-4 text-[15px] sm:flex-row sm:items-center sm:justify-between">
             <label className="inline-flex items-center gap-3">
               <input
                 type="checkbox"
                 checked={rememberMe}
                 onChange={(event) => setRememberMe(event.target.checked)}
-                className="h-5 w-5 rounded border-[#cfd8e6] text-[#3b82f6] focus:ring-[#3b82f6]"
+                className="h-5 w-5 rounded border-[color:var(--color-border-strong)] text-[color:var(--color-primary)] focus:ring-[color:var(--color-primary)]"
               />
               <span>Se souvenir de moi</span>
             </label>
 
-            <Link to="/forgot-password" className="font-medium text-[#4f97ff] transition hover:text-[#2563eb]">
+            <Link to="/forgot-password" className="font-medium text-[color:var(--color-primary)] transition hover:brightness-110">
               Mot de passe oublie ?
             </Link>
           </div>
@@ -190,9 +190,9 @@ export default function Login() {
             {loading ? 'Connexion...' : 'Se connecter'}
           </AuthButton>
 
-          <p className="text-center text-[15px] text-[#7b8aa2]">
+          <p className="theme-text-muted text-center text-[15px]">
             Pas encore de compte ?{' '}
-            <Link to="/register" className="font-semibold text-[#2563eb] transition hover:text-[#1d4ed8]">
+            <Link to="/register" className="font-semibold text-[color:var(--color-primary)] transition hover:brightness-110">
               Creer un compte
             </Link>
           </p>

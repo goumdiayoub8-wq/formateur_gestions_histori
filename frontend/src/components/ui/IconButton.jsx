@@ -45,23 +45,23 @@ const actionStyles = {
   },
   neutral: {
     button:
-      'theme-icon-button bg-[var(--color-card-muted)] text-[var(--color-text-muted)] ring-1 ring-inset ring-[var(--color-border)] hover:bg-[var(--color-text)] hover:text-white',
-    tooltip: 'bg-[var(--color-text)] text-white',
+      'border border-slate-200 bg-slate-50 text-slate-600 ring-1 ring-inset ring-slate-200 hover:bg-white hover:text-slate-900 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-300 dark:ring-white/10 dark:hover:bg-slate-100 dark:hover:text-slate-950',
+    tooltip: 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950',
   },
   export: {
     button:
-      'theme-icon-button bg-[var(--color-card-muted)] text-[var(--color-text-muted)] ring-1 ring-inset ring-[var(--color-border)] hover:bg-[var(--color-text)] hover:text-white',
-    tooltip: 'bg-[var(--color-text)] text-white',
+      'border border-slate-200 bg-slate-50 text-slate-600 ring-1 ring-inset ring-slate-200 hover:bg-white hover:text-slate-900 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-300 dark:ring-white/10 dark:hover:bg-slate-100 dark:hover:text-slate-950',
+    tooltip: 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950',
   },
   filter: {
     button:
-      'theme-icon-button bg-[var(--color-card-muted)] text-[var(--color-text-muted)] ring-1 ring-inset ring-[var(--color-border)] hover:bg-[var(--color-text)] hover:text-white',
-    tooltip: 'bg-[var(--color-text)] text-white',
+      'border border-slate-200 bg-slate-50 text-slate-600 ring-1 ring-inset ring-slate-200 hover:bg-white hover:text-slate-900 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-300 dark:ring-white/10 dark:hover:bg-slate-100 dark:hover:text-slate-950',
+    tooltip: 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950',
   },
   refresh: {
     button:
-      'theme-icon-button bg-[var(--color-card-muted)] text-[var(--color-text-muted)] ring-1 ring-inset ring-[var(--color-border)] hover:bg-[var(--color-text)] hover:text-white',
-    tooltip: 'bg-[var(--color-text)] text-white',
+      'border border-slate-200 bg-slate-50 text-slate-600 ring-1 ring-inset ring-slate-200 hover:bg-white hover:text-slate-900 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-300 dark:ring-white/10 dark:hover:bg-slate-100 dark:hover:text-slate-950',
+    tooltip: 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950',
   },
 };
 
@@ -93,9 +93,9 @@ function BaseContent({
   return (
     <span
       className={cn(
-        'group relative inline-flex items-center justify-center shadow-[0_12px_30px_rgba(15,23,42,0.10)] transition-all duration-300',
+        'group relative inline-flex items-center justify-center shadow-[0_1px_2px_rgba(15,23,42,0.08)] transition-all duration-300',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300/70',
-        disabled ? 'cursor-not-allowed opacity-50 shadow-none' : 'hover:scale-110 hover:shadow-[0_18px_36px_rgba(15,23,42,0.18)]',
+        disabled ? 'cursor-not-allowed opacity-50 shadow-none' : 'hover:scale-105 hover:shadow-[0_8px_20px_rgba(15,23,42,0.10)]',
         boxSize,
         palette.button,
         className,

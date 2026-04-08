@@ -149,6 +149,8 @@ vite.config.ts.timestamp-*
 # Generated backend artifacts
 backend/storage/mail.log
 backend/storage/*.log
+backend/storage/cache/*
+!backend/storage/cache/.gitkeep
 backend/storage/logs/*
 !backend/storage/logs/.gitkeep
 backend/storage/reports/*

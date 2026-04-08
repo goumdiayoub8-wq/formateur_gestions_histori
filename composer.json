@@ -1,0 +1,7 @@
+{
+  "name": "gestion-heures-formateurs/root",
+  "type": "project",
+  "scripts": {
+    "test": "composer --working-dir=backend test"
+  }
+}

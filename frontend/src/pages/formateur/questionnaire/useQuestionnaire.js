@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import QuestionnaireService from '../../../services/questionnaireService';
+import questionnaireService from '../../../services/questionnaireService';
 
 function isQuestionRequired(question) {
   return question ? question.required !== false : true;
@@ -27,6 +27,16 @@ function isAnswerValid(question, answers) {
   }
 
   return !isAnswerEmpty(getCurrentAnswerValue(question, answers));
+}
+
+function areAllRequiredQuestionsAnswered(questionList, answerMap) {
+  return questionList.every((question) => {
+    if (!isQuestionRequired(question)) {
+      return true;
+    }
+
+    return !isAnswerEmpty(answerMap[question.id]);
+  });
 }
 
 export function getScoreMeta(percentage) {
@@ -76,10 +86,10 @@ export function useQuestionnaire(token) {
   const [answers, setAnswers] = useState({});
   const [score, setScore] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [started, setStarted] = useState(false);
+  const [hasStarted, setHasStarted] = useState(false);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [submitting, setSubmitting] = useState(false);
-  const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
   const [notice, setNotice] = useState('');
 
   useEffect(() => {
@@ -89,19 +99,19 @@ export function useQuestionnaire(token) {
       try {
         setLoading(true);
         setNotice('');
-        setSubmitSuccess(false);
+        setHasSubmitted(false);
 
-        const questionnaireResponse = await QuestionnaireService.getEvaluationForm({ token });
+        const response = await questionnaireService.fetchQuestionnaire({ token });
 
         if (!mounted) {
           return;
         }
 
-        setQuestionnaireData(questionnaireResponse || null);
-        setAnswers(questionnaireResponse?.existing_answers || {});
-        setScore(questionnaireResponse?.score || null);
+        setQuestionnaireData(response || null);
+        setAnswers(response?.existing_answers || {});
+        setScore(response?.score || null);
         setCurrentQuestionIndex(0);
-        setStarted(false);
+        setHasStarted(false);
       } catch (error) {
         if (mounted) {
           setQuestionnaireData(null);
@@ -139,12 +149,12 @@ export function useQuestionnaire(token) {
     };
   }, [answers, questions]);
 
-  const handleStart = () => {
-    setStarted(true);
+  const handleStartQuestionnaire = () => {
+    setHasStarted(true);
     setNotice('');
   };
 
-  const handleAnswerChange = (value) => {
+  const handleSelectAnswer = (value) => {
     if (!currentQuestion || submitting) {
       return;
     }
@@ -159,7 +169,7 @@ export function useQuestionnaire(token) {
     }
   };
 
-  const handleNext = () => {
+  const handleGoToNextQuestion = () => {
     if (!currentQuestion) {
       return;
     }
@@ -173,16 +183,23 @@ export function useQuestionnaire(token) {
     setCurrentQuestionIndex((current) => Math.min(current + 1, totalQuestions - 1));
   };
 
-  const handleBack = () => {
+  const handleGoToPreviousQuestion = () => {
     setNotice('');
     setCurrentQuestionIndex((current) => Math.max(current - 1, 0));
   };
 
-  const handleSubmit = async () => {
-    if (!currentQuestion || !isCurrentStepValid || submitting) {
-      if (!isCurrentStepValid) {
-        setNotice('Merci de selectionner une reponse avant l envoi.');
-      }
+  const handleSubmitQuestionnaire = async () => {
+    if (!currentQuestion || submitting) {
+      return;
+    }
+
+    if (!isCurrentStepValid) {
+      setNotice('Merci de selectionner une reponse pour cette question avant envoi.');
+      return;
+    }
+
+    if (!areAllRequiredQuestionsAnswered(questions, answers)) {
+      setNotice('Merci de completer toutes les questions obligatoires avant envoi.');
       return;
     }
 
@@ -202,15 +219,15 @@ export function useQuestionnaire(token) {
           }),
       };
 
-      const response = await QuestionnaireService.submitEvaluationForm(payload, { token });
+      const submittedScore = await questionnaireService.submitQuestionnaire(payload, { token });
 
-      setScore(response || null);
+      setScore(submittedScore || null);
       setQuestionnaireData((current) => ({
         ...(current || {}),
-        score: response || null,
+        score: submittedScore || null,
         can_submit: false,
       }));
-      setSubmitSuccess(true);
+      setHasSubmitted(true);
     } catch (error) {
       setNotice(error?.message || 'Soumission impossible pour le moment.');
     } finally {
@@ -223,18 +240,18 @@ export function useQuestionnaire(token) {
     currentAnswerValue,
     currentQuestion,
     currentQuestionIndex,
-    handleAnswerChange,
-    handleBack,
-    handleNext,
-    handleStart,
-    handleSubmit,
+    handleGoToNextQuestion,
+    handleGoToPreviousQuestion,
+    handleSelectAnswer,
+    handleStartQuestionnaire,
+    handleSubmitQuestionnaire,
+    hasStarted,
+    hasSubmitted,
     loading,
     notice,
     questionnaireData,
     questions,
     score,
-    started,
-    submitSuccess,
     submitting,
     summary,
     totalQuestions,

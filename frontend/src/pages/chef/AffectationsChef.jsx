@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Sparkles, WandSparkles } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Sparkles, Trash2, WandSparkles } from 'lucide-react';
 import FormateurService from '../../services/formateurService';
 import ModuleService from '../../services/moduleService';
 import AffectationService from '../../services/affectationService';
@@ -9,6 +10,7 @@ import SmartAssignmentService from '../../services/smartAssignmentService';
 import {
   buildModuleCode,
   buildTrainerStatsMap,
+  dedupeAssignedModules,
   formatHours,
   getAcademicYearValue,
   safeNumber,
@@ -21,11 +23,16 @@ import {
   ChefLoadingState,
   ChefPageHero,
   ChefProgress,
+  ChefSearchInput,
   ChefSection,
   ChefSelect,
   ChefToastViewport,
   useChefToasts,
 } from '../../components/chef/ChefUI';
+import { Skeleton } from '../../components/ui/Skeleton';
+import { PremiumTable, PremiumTableFooter } from '../../components/ui/PremiumTable';
+import { Avatar } from '../../components/ui/Avatar';
+import useDebouncedValue from '../../hooks/useDebouncedValue';
 
 function CandidateCard({ candidate, onAssign, assigning }) {
   const compatibility = Math.max(0, Math.min(100, candidate.score));
@@ -38,10 +45,10 @@ function CandidateCard({ candidate, onAssign, assigning }) {
 
   return (
     <div
-      className={`rounded-[28px] border bg-white px-6 py-5 shadow-[0_18px_36px_rgba(39,74,129,0.08)] ${
+      className={`hover-card rounded-[28px] border bg-[var(--color-surface-strong)] px-6 py-5 shadow-sm dark:backdrop-blur-xl ${
         candidate.label === 'Meilleur match'
-          ? 'border-[#d58eff] shadow-[0_20px_40px_rgba(167,90,247,0.14)]'
-          : 'border-[#dce6f3]'
+          ? 'border-[color-mix(in_srgb,var(--color-primary)_45%,transparent)] shadow-md'
+          : 'border-[var(--color-border)]'
       }`}
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -54,10 +61,15 @@ function CandidateCard({ candidate, onAssign, assigning }) {
               <ChefBadge tone="red">Bloque</ChefBadge>
             )}
           </div>
-          <h3 className="text-[1.9rem] font-bold text-[#1b2941]">
-            {candidate.formateur.nom}
-          </h3>
-          <p className="mt-1 text-lg text-[#6e8199]">{candidate.formateur.specialite}</p>
+          <div className="flex items-center gap-3">
+            <Avatar name={candidate.formateur.nom} size={48} />
+            <div>
+              <h3 className="text-[1.9rem] font-bold text-[var(--color-text-soft)]">
+                {candidate.formateur.nom}
+              </h3>
+              <p className="mt-1 text-lg text-[var(--color-text-muted)]">{candidate.formateur.specialite}</p>
+            </div>
+          </div>
         </div>
 
         <ChefButton onClick={onAssign} disabled={!candidate.validation.valid || assigning}>
@@ -67,7 +79,7 @@ function CandidateCard({ candidate, onAssign, assigning }) {
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_1fr]">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#8ca0bb]">
+          <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--color-text-subtle)]">
             Modules enseignes
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -78,7 +90,7 @@ function CandidateCard({ candidate, onAssign, assigning }) {
                 </ChefBadge>
               ))
             ) : (
-              <span className="text-sm text-[#8da0ba]">Aucun module affecte</span>
+              <span className="text-sm text-[var(--color-text-subtle)]">Aucun module affecte</span>
             )}
           </div>
         </div>
@@ -102,30 +114,30 @@ function CandidateCard({ candidate, onAssign, assigning }) {
       </div>
 
       <div className="mt-5 grid gap-4 md:grid-cols-3">
-        <div className="rounded-[18px] border border-[#e8eef7] bg-[#fbfdff] px-4 py-4">
-          <p className="text-sm text-[#7d90aa]">Projection annuelle</p>
-          <p className="mt-2 text-2xl font-bold text-[#1b2941]">
+        <div className="rounded-[18px] border border-[var(--color-border)] bg-[var(--color-card-muted)] px-4 py-4">
+          <p className="text-sm text-[var(--color-text-muted)]">Projection annuelle</p>
+          <p className="mt-2 text-2xl font-bold text-[var(--color-text-soft)]">
             {formatHours(candidate.validation.projectedAnnual)}
           </p>
         </div>
-        <div className="rounded-[18px] border border-[#e8eef7] bg-[#fbfdff] px-4 py-4">
-          <p className="text-sm text-[#7d90aa]">Projection hebdo</p>
-          <p className="mt-2 text-2xl font-bold text-[#1b2941]">
+        <div className="rounded-[18px] border border-[var(--color-border)] bg-[var(--color-card-muted)] px-4 py-4">
+          <p className="text-sm text-[var(--color-text-muted)]">Projection hebdo</p>
+          <p className="mt-2 text-2xl font-bold text-[var(--color-text-soft)]">
             {formatHours(candidate.validation.projectedWeekly)}
           </p>
         </div>
-        <div className="rounded-[18px] border border-[#e8eef7] bg-[#fbfdff] px-4 py-4">
-          <p className="text-sm text-[#7d90aa]">Projection S1 / S2</p>
-          <p className="mt-2 text-2xl font-bold text-[#1b2941]">
+        <div className="rounded-[18px] border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface-strong)_74%,transparent)] px-4 py-4">
+          <p className="text-sm text-[var(--color-text-muted)]">Projection S1 / S2</p>
+          <p className="mt-2 text-2xl font-bold text-[var(--color-text-soft)]">
             {formatHours(candidate.validation.projectedS1Hours)} / {formatHours(candidate.validation.projectedS2Hours)}
           </p>
         </div>
       </div>
 
       {candidate.validation.errors.length ? (
-        <div className="mt-5 rounded-[18px] border border-[#ffd3d3] bg-[#fff5f5] px-4 py-4">
+        <div className="mt-5 rounded-[18px] border border-[var(--color-danger-border)] bg-[var(--color-danger-bg)] px-4 py-4">
           {candidate.validation.errors.map((error) => (
-            <p key={error} className="text-sm font-medium text-[#cf4c4c]">
+            <p key={error} className="text-sm font-medium text-[var(--color-danger-text)]">
               {error}
             </p>
           ))}
@@ -133,9 +145,9 @@ function CandidateCard({ candidate, onAssign, assigning }) {
       ) : null}
 
       {candidate.validation.warnings.length ? (
-        <div className="mt-4 rounded-[18px] border border-[#ffe1ad] bg-[#fff8ea] px-4 py-4">
+        <div className="mt-4 rounded-[18px] border border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] px-4 py-4">
           {candidate.validation.warnings.map((warning) => (
-            <p key={warning} className="text-sm font-medium text-[#c17c17]">
+            <p key={warning} className="text-sm font-medium text-[var(--color-warning-text)]">
               {warning}
             </p>
           ))}
@@ -145,18 +157,63 @@ function CandidateCard({ candidate, onAssign, assigning }) {
   );
 }
 
+const PAGE_LIMIT = 5;
+
+const assignmentTableBodyVariants = {
+  hidden: {},
+  show: {
+    transition: {
+      staggerChildren: 0.06,
+    },
+  },
+};
+
+const assignmentTableRowVariants = {
+  hidden: { opacity: 0, y: 18 },
+  show: { opacity: 1, y: 0 },
+};
+
+function AffectationsTableSkeleton() {
+  return (
+    <tbody>
+      {Array.from({ length: PAGE_LIMIT }, (_, index) => (
+        <tr key={`affectations-skeleton-${index}`} className="border-t border-[var(--color-border)]">
+          <td className="px-4 py-4"><Skeleton className="h-4 w-32 rounded-full" /></td>
+          <td className="px-4 py-4"><Skeleton className="h-4 w-44 rounded-full" /></td>
+          <td className="px-4 py-4"><Skeleton className="h-8 w-28 rounded-full" /></td>
+          <td className="px-4 py-4"><Skeleton className="h-8 w-14 rounded-full" /></td>
+          <td className="px-4 py-4"><Skeleton className="h-6 w-16 rounded-full" /></td>
+          <td className="px-4 py-4">
+            <div className="flex justify-end">
+              <Skeleton className="h-10 w-10 rounded-2xl" />
+            </div>
+          </td>
+        </tr>
+      ))}
+    </tbody>
+  );
+}
+
 export default function AffectationsChef() {
   const [loading, setLoading] = useState(true);
+  const [tableLoading, setTableLoading] = useState(true);
   const [assigningId, setAssigningId] = useState(null);
+  const [removingId, setRemovingId] = useState(null);
   const [selectedModuleId, setSelectedModuleId] = useState('');
   const [backendSuggestions, setBackendSuggestions] = useState([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [assignmentQuery, setAssignmentQuery] = useState('');
+  const [assignmentRows, setAssignmentRows] = useState([]);
+  const [assignmentCurrentPage, setAssignmentCurrentPage] = useState(1);
+  const [assignmentTotalItems, setAssignmentTotalItems] = useState(0);
+  const [assignmentTotalPages, setAssignmentTotalPages] = useState(1);
   const [formateurs, setFormateurs] = useState([]);
   const [modules, setModules] = useState([]);
   const [affectations, setAffectations] = useState([]);
   const [dashboardPayload, setDashboardPayload] = useState(null);
   const [academicConfig, setAcademicConfig] = useState(null);
   const { toasts, pushToast, dismissToast } = useChefToasts();
+  const debouncedAssignmentQuery = useDebouncedValue(assignmentQuery.trim(), 300);
 
   const loadData = async () => {
     try {
@@ -196,10 +253,43 @@ export default function AffectationsChef() {
     loadData();
   }, []);
 
+  const loadAssignmentRows = async (page = assignmentCurrentPage) => {
+    try {
+      setTableLoading(true);
+      const response = await AffectationService.listPaginated({
+        page,
+        limit: PAGE_LIMIT,
+        search: debouncedAssignmentQuery,
+        annee: academicYear || undefined,
+      });
+
+      setAssignmentRows(Array.isArray(response?.data) ? response.data : []);
+      setAssignmentTotalItems(safeNumber(response?.total_items, 0));
+      setAssignmentTotalPages(Math.max(1, safeNumber(response?.total_pages, 1)));
+      setAssignmentCurrentPage(Math.max(1, safeNumber(response?.current_page, 1)));
+    } catch (loadError) {
+      pushToast({
+        tone: 'danger',
+        title: 'Liste indisponible',
+        description: loadError.message || "Impossible de charger les affectations actuelles.",
+      });
+    } finally {
+      setTableLoading(false);
+    }
+  };
+
   const academicYear = useMemo(
     () => getAcademicYearValue(academicConfig),
     [academicConfig],
   );
+
+  useEffect(() => {
+    if (!academicYear) {
+      return;
+    }
+
+    loadAssignmentRows(assignmentCurrentPage);
+  }, [academicYear, assignmentCurrentPage, debouncedAssignmentQuery]);
 
   const trainerStatsMap = useMemo(
     () =>
@@ -300,7 +390,7 @@ export default function AffectationsChef() {
         id: trainerId,
         score: safeNumber(candidate.score),
         remainingHours: safeNumber(candidate.heures_restantes),
-        assignedModules:
+        assignedModules: dedupeAssignedModules(
           Array.isArray(trainerStats.assigned_modules) && trainerStats.assigned_modules.length > 0
             ? trainerStats.assigned_modules
             : (candidate.modules || []).map((code) => ({
@@ -308,6 +398,7 @@ export default function AffectationsChef() {
                 code,
                 intitule: '',
               })),
+        ),
         formateur: {
           ...trainer,
           nom: candidate.name || trainer.nom || 'Formateur',
@@ -339,6 +430,8 @@ export default function AffectationsChef() {
     [suggestions],
   );
 
+  const isAssignmentSearchPending = assignmentQuery.trim() !== debouncedAssignmentQuery;
+
   const handleAssign = async (candidate) => {
     if (!selectedModule) {
       return;
@@ -357,7 +450,7 @@ export default function AffectationsChef() {
         description: `${buildModuleCode(selectedModule)} a ete affecte a ${candidate.formateur.nom}.`,
       });
 
-      await loadData();
+      await Promise.all([loadData(), loadAssignmentRows(assignmentCurrentPage)]);
       setSelectedModuleId('');
     } catch (assignError) {
       pushToast({
@@ -367,6 +460,31 @@ export default function AffectationsChef() {
       });
     } finally {
       setAssigningId(null);
+    }
+  };
+
+  const handleRemoveAssignment = async (row) => {
+    if (!window.confirm(`Liberer ${row.module_intitule} pour ${row.formateur_nom} ?`)) {
+      return;
+    }
+
+    try {
+      setRemovingId(row.id);
+      await AffectationService.remove(row.id);
+      pushToast({
+        tone: 'success',
+        title: 'Affectation retiree',
+        description: `${row.module_intitule} est de nouveau disponible.`,
+      });
+      await Promise.all([loadData(), loadAssignmentRows(assignmentCurrentPage)]);
+    } catch (error) {
+      pushToast({
+        tone: 'danger',
+        title: 'Suppression impossible',
+        description: error.message || "Impossible de retirer cette affectation.",
+      });
+    } finally {
+      setRemovingId(null);
     }
   };
 
@@ -409,6 +527,120 @@ export default function AffectationsChef() {
         )}
       </ChefSection>
 
+      <ChefSection
+        title="Affectations actuelles"
+        subtitle="Recherche debouncee, pagination uniforme et actions rapides sur les affectations deja en place."
+      >
+        <div className="space-y-4">
+          <ChefSearchInput
+            value={assignmentQuery}
+            onChange={(value) => {
+              setAssignmentQuery(value);
+              setAssignmentCurrentPage(1);
+            }}
+            placeholder="Rechercher un formateur, un module ou une filiere..."
+            className="h-16 rounded-3xl border-[color-mix(in_srgb,var(--color-border)_80%,transparent)] bg-[color-mix(in_srgb,var(--color-surface-strong)_78%,transparent)] backdrop-blur-xl"
+          />
+
+          <PremiumTable
+            minWidthClassName="min-w-[980px]"
+            columns={[
+              { key: 'formateur', label: 'Formateur', className: 'w-[22%]' },
+              { key: 'module', label: 'Module', className: 'w-[32%]' },
+              { key: 'filiere', label: 'Filiere', className: 'w-[16%]' },
+              { key: 'semestre', label: 'Semestre', className: 'w-[10%]' },
+              { key: 'annee', label: 'Annee', className: 'w-[10%]' },
+              { key: 'actions', label: 'Actions', className: 'w-[10%] text-right' },
+            ]}
+            footer={(
+              <PremiumTableFooter
+                currentPage={assignmentCurrentPage}
+                totalPages={assignmentTotalPages}
+                totalItems={assignmentTotalItems}
+                itemCount={assignmentRows.length}
+                loading={tableLoading || isAssignmentSearchPending}
+                onPageChange={setAssignmentCurrentPage}
+                pendingLabel="Recherche des affectations..."
+              />
+            )}
+          >
+            {tableLoading ? (
+              <AffectationsTableSkeleton />
+            ) : assignmentRows.length ? (
+              <motion.tbody
+                layout
+                variants={assignmentTableBodyVariants}
+                initial="hidden"
+                animate="show"
+              >
+                {assignmentRows.map((row) => (
+                  <motion.tr
+                    key={row.id}
+                    layout
+                    variants={assignmentTableRowVariants}
+                    className="hover-row border-t border-[var(--color-border)] transition hover:bg-[color-mix(in_srgb,var(--color-hover)_85%,transparent)]"
+                  >
+                    <td className="px-4 py-4">
+                      <div className="flex items-center gap-3">
+                        <Avatar name={row.formateur_nom} size={36} />
+                        <div>
+                          <p className="font-semibold text-[var(--color-text-soft)]">{row.formateur_nom}</p>
+                          <p className="mt-1 text-xs text-[var(--color-text-muted)]">{row.formateur_email}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="space-y-2">
+                        <p className="font-semibold text-[var(--color-text-soft)]">
+                          {`${row.module_code ? `${row.module_code} - ` : ''}${row.module_intitule}`}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <ChefBadge tone="orange">{formatHours(row.volume_horaire)}</ChefBadge>
+                          {safeNumber(row.has_efm) === 1 ? <ChefBadge tone="red">EFM</ChefBadge> : null}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4">
+                      <ChefBadge tone="violet">{row.filiere}</ChefBadge>
+                    </td>
+                    <td className="px-4 py-4">
+                      <ChefBadge tone="green">{row.semestre}</ChefBadge>
+                    </td>
+                    <td className="px-4 py-4 text-sm font-semibold text-[var(--color-text-soft)]">
+                      {row.annee}
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex justify-end">
+                        <motion.button
+                          type="button"
+                          whileTap={{ scale: removingId === row.id ? 1 : 0.95 }}
+                          disabled={removingId === row.id}
+                          onClick={() => handleRemoveAssignment(row)}
+                          className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color-mix(in_srgb,var(--color-danger-text)_30%,transparent)] bg-[var(--color-danger-bg)] text-[var(--color-danger-text)] backdrop-blur disabled:opacity-60"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </motion.button>
+                      </div>
+                    </td>
+                  </motion.tr>
+                ))}
+              </motion.tbody>
+            ) : (
+              <tbody>
+                <tr>
+                  <td colSpan={6} className="p-6">
+                    <ChefEmptyState
+                      title="Aucune affectation"
+                      description="Aucune affectation ne correspond a la recherche active pour cette annee academique."
+                    />
+                  </td>
+                </tr>
+              </tbody>
+            )}
+          </PremiumTable>
+        </div>
+      </ChefSection>
+
       {selectedModule ? (
         <>
           <ChefSection
@@ -434,7 +666,7 @@ export default function AffectationsChef() {
               <ChefBadge tone="orange">{formatHours(selectedModule.volume_horaire)}</ChefBadge>
               {selectedModule.has_efm ? <ChefBadge tone="red">EFM</ChefBadge> : null}
             </div>
-            <h3 className="mt-4 text-2xl font-bold text-[#1b2941]">{selectedModule.intitule}</h3>
+            <h3 className="mt-4 text-2xl font-bold text-[var(--color-text-soft)]">{selectedModule.intitule}</h3>
           </ChefSection>
 
           {!suggestions.some((candidate) => candidate.validation.valid) ? (
@@ -454,7 +686,7 @@ export default function AffectationsChef() {
           ) : null}
 
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-[1.9rem] font-bold text-[#1b2941]">
+            <h2 className="text-[1.9rem] font-bold text-[var(--color-text-soft)]">
               Suggestions IA ({suggestions.length})
             </h2>
           </div>

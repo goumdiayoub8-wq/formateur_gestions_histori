@@ -9,14 +9,6 @@ const SmartAssignmentService = {
     });
   },
 
-  getAutoAssignPreview(moduleId) {
-    return apiRequest({
-      url: '/auto-assign',
-      method: 'get',
-      params: { module_id: moduleId },
-    });
-  },
-
   assign(payload) {
     return apiRequest({
       url: '/assign',

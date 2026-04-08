@@ -1,11 +1,6 @@
 @echo off
 setlocal
 
-:: ============================
-:: Windows one-click project launch
-:: Compatible with the current React + Vite + PHP setup
-:: ============================
-
 set "ROOT_DIR=%~dp0"
 set "MYSQL_PATH=C:\xampp\mysql\bin\mysql.exe"
 set "PHP_PATH=C:\xampp\php\php.exe"

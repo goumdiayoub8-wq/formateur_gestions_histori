@@ -40,20 +40,37 @@ class ModuleController
 
     public function index(): void
     {
+        $page = InputValidator::integer(
+            ['page' => requestQuery('page')],
+            'page',
+            'page',
+            false,
+            1
+        ) ?? 1;
+        $limit = InputValidator::integer(
+            ['limit' => requestQuery('limit')],
+            'limit',
+            'limit',
+            false,
+            1,
+            100
+        ) ?? 5;
         $filters = [
+            'search' => trim((string) (requestQuery('search') ?? requestQuery('q') ?? '')),
             'filiere' => requestQuery('filiere'),
             'semestre' => requestQuery('semestre'),
             'has_efm' => requestQuery('has_efm') !== null ? parseBoolean(requestQuery('has_efm')) : null,
             'formateur_id' => requestQuery('formateur_id'),
             'annee' => requestQuery('annee') !== null ? intval(requestQuery('annee')) : currentAcademicYear(),
         ];
-
-        $rows = $this->modules->all($filters);
+        $payload = $this->modules->paginate($page, $limit, $filters);
+        $rows = $payload['data'];
 
         jsonResponse([
-            'status' => 'success',
             'data' => $rows,
-            'modules' => $rows,
+            'total_items' => $payload['total_items'],
+            'total_pages' => $payload['total_pages'],
+            'current_page' => $payload['current_page'],
         ]);
     }
 
@@ -111,18 +128,34 @@ class ModuleController
 
     public function progressList(): void
     {
+        $page = InputValidator::integer(
+            ['page' => requestQuery('page')],
+            'page',
+            'page',
+            false,
+            1
+        ) ?? 1;
+        $limit = InputValidator::integer(
+            ['limit' => requestQuery('limit')],
+            'limit',
+            'limit',
+            false,
+            1,
+            100
+        ) ?? 5;
         $filters = [
             'annee' => currentAcademicYear(),
             'q' => requestQuery('q'),
             'module_id' => requestQuery('module_id'),
             'groupe_id' => requestQuery('groupe_id'),
         ];
-        $rows = $this->modules->progressList($filters);
+        $payload = $this->modules->progressPaginate($page, $limit, $filters);
 
         jsonResponse([
-            'status' => 'success',
-            'data' => $rows,
-            'rows' => $rows,
+            'data' => $payload['data'],
+            'total_items' => $payload['total_items'],
+            'total_pages' => $payload['total_pages'],
+            'current_page' => $payload['current_page'],
         ]);
     }
 }

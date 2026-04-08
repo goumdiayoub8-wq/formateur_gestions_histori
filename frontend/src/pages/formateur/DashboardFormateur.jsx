@@ -1,114 +1,45 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, Bell, BookOpen, CalendarDays, ChevronLeft, ChevronRight, Clock3, GraduationCap, Users } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { Bell, BookOpen, CalendarDays, Clock3, Users } from 'lucide-react';
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import DashboardService from '../../services/dashboardService';
-import PlanningService from '../../services/planningService';
-import FormateurService from '../../services/formateurService';
-import Spinner from '../../components/ui/Spinner';
+import { PremiumCard, PremiumMetricCard } from '../../components/ui/PremiumCard';
+import { SkeletonChartPanel, SkeletonPremiumCard } from '../../components/ui/Skeleton';
 import useAcademicConfig from '../../hooks/useAcademicConfig';
-import useExportPDF from '../../hooks/useExportPDF';
-import ExportFormateurButton from '../../components/planning/ExportFormateurButton';
-import {
-  FormateurEmptyBlock,
-  FormateurAlertCard,
-  FormateurPanel,
-  FormateurSectionHeader,
-  FormateurSemesterBadge,
-  FormateurStatCard,
-} from '../../components/formateur/FormateurUI';
 
 function formatHourValue(value) {
   const numericValue = Number(value || 0);
   return Number.isInteger(numericValue) ? `${numericValue}h` : `${numericValue.toFixed(1).replace(/\.0$/, '')}h`;
 }
 
-function ProgressCard({ progress, value, target }) {
-  const percent = Math.max(0, Math.min(100, Number(progress?.percent || 0)));
-  const statusLabel = progress?.is_above_target ? "Au-dessus de l'objectif" : 'Progression en cours';
-
+function TrainerDashboardSkeleton() {
   return (
-    <FormateurPanel className="p-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h2 className="text-[19px] font-bold tracking-tight text-[#1f2a3d]">
-            Progression Annuelle - Objectif {target} heures
-          </h2>
-          <p className="mt-2 text-[15px] text-[#7a8aa1]">
-            {Math.round(Number(value || 0))} heures completees sur {target} heures cible
-          </p>
+    <div className="space-y-6">
+      <PremiumCard className="overflow-hidden border border-slate-200 bg-white p-8 text-slate-900 shadow-sm dark:border-white/10 dark:bg-gradient-to-br dark:from-slate-900 dark:via-blue-950 dark:to-sky-900 dark:text-white dark:shadow-none" hover={false}>
+        <div className="space-y-4">
+          <div className="h-4 w-32 rounded-full bg-slate-200 dark:bg-white/15" />
+          <div className="h-10 w-1/2 rounded-2xl bg-slate-100 dark:bg-white/10" />
+          <div className="h-5 w-2/5 rounded-2xl bg-slate-100 dark:bg-white/10" />
         </div>
-
-        <div className="text-left lg:text-right">
-          <p className="text-[36px] font-bold tracking-tight text-[#0ab14f]">{percent}%</p>
-          <p className="text-[15px] text-[#7a8aa1]">{statusLabel}</p>
-        </div>
+      </PremiumCard>
+      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 4 }, (_, index) => (
+          <SkeletonPremiumCard key={index} />
+        ))}
       </div>
-
-      <div className="mt-6 h-4 overflow-hidden rounded-full bg-[#edf1f7]">
-        <div className="h-full rounded-full bg-[#1e4dff]" style={{ width: `${percent}%` }} />
+      <div className="grid gap-5 xl:grid-cols-12">
+        <SkeletonChartPanel className="xl:col-span-7" />
+        <SkeletonChartPanel className="xl:col-span-5" />
       </div>
-
-      <div className="mt-3 flex items-center justify-between text-[13px] text-[#8c9bb0]">
-        <span>0h</span>
-        <span>{Math.round(Number(value || 0))} h</span>
-        <span>{target}+ </span>
+      <div className="grid gap-5 xl:grid-cols-12">
+        <SkeletonChartPanel className="xl:col-span-5" />
+        <SkeletonChartPanel className="xl:col-span-7" />
       </div>
-    </FormateurPanel>
-  );
-}
-
-function ModuleRow({ module }) {
-  return (
-    <div className="rounded-[20px] bg-[#f7f9fd] px-4 py-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-[15px] font-bold text-[#1d2a3f]">{module.code}</p>
-          <p className="mt-1 text-[14px] text-[#5e708a]">{module.intitule}</p>
-        </div>
-        <FormateurSemesterBadge value={module.semestre} />
-      </div>
-
-      <div className="mt-3 flex flex-wrap gap-3 text-[14px] text-[#71839d]">
-        <span>{formatHourValue(module.weekly_hours)}/sem</span>
-        <span>•</span>
-        <span>{formatHourValue(module.volume_horaire)} total</span>
-      </div>
-    </div>
-  );
-}
-
-function GroupRow({ group }) {
-  return (
-    <div className="flex items-center justify-between gap-4 rounded-[20px] bg-[#f7f9fd] px-4 py-4">
-      <div className="min-w-0">
-        <p className="truncate text-[15px] font-bold text-[#1d2a3f]">{group.code}</p>
-        <p className="mt-1 truncate text-[14px] text-[#5e708a]">{group.nom}</p>
-      </div>
-      <p className="shrink-0 text-[15px] font-semibold text-[#1d2a3f]">{group.student_count} etudiants</p>
-    </div>
-  );
-}
-
-function PlanningDayChip({ day }) {
-  return (
-    <div className="rounded-[18px] border border-[#dce5f3] bg-[#f7f9fd] px-4 py-4 text-center">
-      <p className="text-[13px] text-[#7486a1]">{day.label}</p>
-      <p className="mt-2 text-[18px] font-bold text-[#1d2a3f]">{day.display_hours}</p>
     </div>
   );
 }
 
 export default function DashboardFormateur() {
-  const academicConfigEnabled = false;
-  const [overview, setOverview] = useState(null);
-  const [profile, setProfile] = useState(null);
-  const [weeklyStats, setWeeklyStats] = useState(null);
-  const [modules, setModules] = useState([]);
-  const [notificationSummary, setNotificationSummary] = useState(null);
-  const [planningExportFeedback, setPlanningExportFeedback] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const { exporting, exportSinglePlanning, exportStatusLabel } = useExportPDF();
   const {
     config,
     loading: academicLoading,
@@ -117,343 +48,353 @@ export default function DashboardFormateur() {
     currentSemester,
     inStagePeriod,
     inExamPeriod,
-    validation,
-  } = useAcademicConfig({ enabled: academicConfigEnabled });
+  } = useAcademicConfig();
+  const [week, setWeek] = useState(null);
+  const [overview, setOverview] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    let mounted = true;
+    if (week === null && !academicLoading) {
+      setWeek(Math.max(1, Number(currentWeek || 1)));
+    }
+  }, [academicLoading, currentWeek, week]);
 
-    const loadDashboard = async () => {
+  useEffect(() => {
+    if (week === null) {
+      return undefined;
+    }
+
+    let active = true;
+
+    const load = async () => {
+      setLoading(true);
+      setError('');
       try {
-        setLoading(true);
-        setError('');
-
-        const [overviewResponse, profileResponse, statsResponse, modulesResponse, notificationsResponse] = await Promise.all([
-          DashboardService.getTrainerOverview(),
-          FormateurService.getProfil(),
-          PlanningService.getWeeklyStats(),
-          PlanningService.getMesModules(),
-          FormateurService.getNotifications(),
-        ]);
-
-        if (!mounted) {
-          return;
+        const data = await DashboardService.getTrainerOverview(week);
+        if (active) {
+          setOverview(data);
         }
-
-        setOverview(overviewResponse);
-        setProfile(profileResponse);
-        setWeeklyStats(statsResponse);
-        setModules(Array.isArray(modulesResponse) ? modulesResponse : []);
-        setNotificationSummary(notificationsResponse?.summary || null);
       } catch (loadError) {
-        if (mounted) {
-          setError(loadError?.message || "Impossible de charger l'espace formateur.");
+        if (active) {
+          setError(loadError?.message || 'Impossible de charger le tableau de bord formateur.');
         }
       } finally {
-        if (mounted) {
+        if (active) {
           setLoading(false);
         }
       }
     };
 
-    loadDashboard();
+    load();
 
     return () => {
-      mounted = false;
+      active = false;
     };
-  }, []);
+  }, [week]);
 
-  const displayedModules = useMemo(() => {
-    if (modules.length > 0) {
-      return modules.slice(0, 4);
+  const dailyTotals = Array.isArray(overview?.planning?.daily_totals) ? overview.planning.daily_totals : [];
+  const displayedModules = Array.isArray(overview?.modules) ? overview.modules.slice(0, 5) : [];
+  const displayedGroups = Array.isArray(overview?.groups) ? overview.groups.slice(0, 5) : [];
+  const alerts = Array.isArray(overview?.alerts) ? overview.alerts.slice(0, 4) : [];
+  const progressPercent = Math.max(0, Math.min(100, Number(overview?.progress?.percent || 0)));
+  const maxWeek = useMemo(() => {
+    if (!config?.end_date || !config?.start_date) {
+      return 52;
     }
 
-    return overview?.modules?.slice(0, 4) || [];
-  }, [modules, overview?.modules]);
+    const start = new Date(`${config.start_date}T00:00:00`);
+    const end = new Date(`${config.end_date}T00:00:00`);
+    const totalDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86400000));
+    return Math.max(1, Math.ceil(totalDays / 7));
+  }, [config]);
 
-  if (loading) {
-    return (
-      <div className="flex min-h-[55vh] items-center justify-center">
-        <Spinner className="h-11 w-11 border-[#dbe3ef] border-t-[#1f57ff]" />
-      </div>
-    );
+  if (loading || week === null) {
+    return <TrainerDashboardSkeleton />;
   }
 
   if (error) {
     return (
-      <FormateurPanel className="px-6 py-6 text-[15px] font-semibold text-[#b54545]">
-        {error}
-      </FormateurPanel>
+      <PremiumCard className="border-[var(--color-danger-border)] bg-[var(--color-danger-bg)] p-6 text-[var(--color-danger-text)]" hover={false}>
+        <h1 className="text-xl font-bold tracking-tight">Tableau de bord indisponible</h1>
+        <p className="mt-2 text-sm leading-7">{error}</p>
+      </PremiumCard>
     );
   }
 
-  const annualHours = Number(overview?.stats?.annual_completed_hours || overview?.progress?.value || 0);
-  const annualTarget = Number(
-    overview?.stats?.annual_target_hours
-      || overview?.progress?.target
-      || overview?.profile?.max_heures
-      || profile?.max_heures
-      || 910,
-  );
-  const normalizedAnnualTarget = annualTarget > 0 ? annualTarget : 910;
-  const progressPercent = Math.round((annualHours / normalizedAnnualTarget) * 100);
-  const progress = {
-    percent: Number.isFinite(progressPercent) ? progressPercent : 0,
-    value: annualHours,
-    target: normalizedAnnualTarget,
-    is_above_target: annualHours > normalizedAnnualTarget,
-  };
-  const stats = {
-    assigned_modules: weeklyStats?.assigned_modules ?? overview?.stats?.assigned_modules ?? 0,
-    groups_count: overview?.stats?.groups_count ?? 0,
-    weekly_hours: weeklyStats?.weekly_hours ?? overview?.stats?.weekly_hours ?? 0,
-    weekly_target: weeklyStats?.weekly_target ?? overview?.stats?.weekly_target_hours ?? 0,
-    weekly_limit: weeklyStats?.weekly_limit ?? overview?.stats?.weekly_limit_hours ?? 44,
-    notifications: notificationSummary?.total ?? 0,
-  };
-  const planning = overview?.planning || null;
-  const planningAlerts = Array.isArray(overview?.alerts) ? overview.alerts : [];
-  const fallbackAcademicYear = Number(overview?.stats?.academic_year || weeklyStats?.academic_year || 0);
-  const displayAcademicYearLabel =
-    academicYearLabel || (fallbackAcademicYear > 0 ? `${fallbackAcademicYear - 1}-${fallbackAcademicYear}` : '');
-  const displayCurrentWeek = currentWeek ?? overview?.stats?.week ?? weeklyStats?.week ?? null;
-
-  const handleExportPlanning = async () => {
-    try {
-      setPlanningExportFeedback(null);
-      await exportSinglePlanning({
-        trainer: {
-          id: profile?.id || overview?.profile?.id,
-          name: profile?.nom || overview?.profile?.nom || 'Mon planning',
-          specialite: profile?.specialite || overview?.profile?.specialite || '',
-          weeklyHours: stats.weekly_hours || 0,
-          entries: planning?.schedule || [],
-        },
-        weekNumber: overview?.stats?.week ?? currentWeek,
-        weekRange: planning?.week_range?.label || '',
-        academicYearLabel: displayAcademicYearLabel,
-      });
-      setPlanningExportFeedback({
-        tone: 'success',
-        message: 'Le PDF de votre planning a ete telecharge avec succes.',
-      });
-    } catch (exportError) {
-      setPlanningExportFeedback({
-        tone: 'error',
-        message: exportError?.message || 'Impossible de generer le PDF de votre planning.',
-      });
-    }
-  };
-
   return (
-    <div className="formateur-dashboard-page space-y-6 pb-8">
-      <div className="rounded-[28px] bg-gradient-to-r from-[#8c15ff] via-[#c412d6] to-[#f10072] px-6 py-8 text-white shadow-[0_20px_50px_rgba(173,26,183,0.28)]">
-        <h1 className="text-[22px] font-bold tracking-tight">
-          Bienvenue Mr {profile?.nom || overview?.profile?.nom || 'Formateur'}
-        </h1>
-        <p className="mt-3 text-[15px] text-white/88">
-          Voici votre planning et vos modules de formation
-        </p>
-        <div className="mt-5 flex flex-wrap items-center gap-3 text-sm">
-          <span className="rounded-full bg-white/14 px-3 py-1.5 font-semibold">{displayAcademicYearLabel || 'Annee non definie'}</span>
-          <span className="rounded-full bg-white/14 px-3 py-1.5 font-semibold">Semaine {displayCurrentWeek ?? '-'}</span>
-          <span className="rounded-full bg-white/14 px-3 py-1.5 font-semibold">{currentSemester || '-'}</span>
-          {inStagePeriod ? <span className="rounded-full bg-[#20c05c] px-3 py-1.5 font-semibold text-white">Stage</span> : null}
-          {inExamPeriod ? <span className="rounded-full bg-[#ff9b1f] px-3 py-1.5 font-semibold text-white">Exam</span> : null}
-        </div>
-      </div>
+    <div className="space-y-6 pb-8">
+      <PremiumCard className="overflow-hidden border border-slate-200 bg-white p-8 text-slate-900 shadow-sm dark:border-white/10 dark:bg-gradient-to-br dark:from-slate-900 dark:via-blue-950 dark:to-sky-900 dark:text-white dark:shadow-none" hover={false}>
+        <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+          <div className="space-y-4">
+            <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-600 dark:border-white/10 dark:bg-white/10 dark:text-cyan-100">
+              Vue formateur
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
+                Bonjour {overview?.profile?.nom || 'Formateur'}
+              </h1>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600 dark:text-slate-200">
+                Suivez votre progression, vos alertes de charge et vos seances sans surcharger l interface.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 text-sm">
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-600 dark:border-white/10 dark:bg-white/10 dark:text-white">{academicYearLabel || 'Annee non definie'}</span>
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-600 dark:border-white/10 dark:bg-white/10 dark:text-white">Semaine {week}</span>
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-600 dark:border-white/10 dark:bg-white/10 dark:text-white">{currentSemester || '-'}</span>
+              {inStagePeriod ? <span className="rounded-full bg-emerald-50 px-3 py-1.5 font-semibold text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-100">Stage</span> : null}
+              {inExamPeriod ? <span className="rounded-full bg-amber-50 px-3 py-1.5 font-semibold text-amber-700 dark:bg-amber-400/20 dark:text-amber-100">Exam</span> : null}
+            </div>
+          </div>
 
-      {academicConfigEnabled && !academicLoading && !config ? (
-        <FormateurPanel className="border-[#ffe3ad] bg-[#fff8e9] px-6 py-5 text-[15px] font-medium text-[#9a6500]">
-          Configurez l&apos;annee scolaire pour activer les calculs de semaine et de semestre.
-        </FormateurPanel>
-      ) : null}
-
-      {academicConfigEnabled && !academicLoading && config && !validation.isValid ? (
-        <FormateurPanel className="border-[#ffd9d9] bg-[#fff5f5] px-6 py-5 text-[15px] font-medium text-[#d14343]">
-          La configuration academique est invalide. Les calculs de semaine et de semestre sont bloques tant qu&apos;elle n&apos;est pas corrigee.
-        </FormateurPanel>
-      ) : null}
-
-      <ProgressCard progress={progress} value={progress.value} target={progress.target} />
-
-      <div className="grid gap-4 xl:grid-cols-4 md:grid-cols-2">
-        <FormateurStatCard
-          icon={BookOpen}
-          iconClassName="bg-[#f4edff] text-[#972dff]"
-          label="Mes Modules"
-          value={stats.assigned_modules}
-        />
-        <FormateurStatCard
-          icon={Users}
-          iconClassName="bg-[#eef4ff] text-[#2663ff]"
-          label="Mes Groupes"
-          value={stats.groups_count}
-        />
-        <FormateurStatCard
-          icon={Clock3}
-          iconClassName="bg-[#ecfbf1] text-[#07b34a]"
-          label="Heures/semaine"
-          value={formatHourValue(stats.weekly_hours)}
-          helper={
-            Number(stats.weekly_target || 0) > 0
-              ? `Cible ${formatHourValue(stats.weekly_target)}`
-              : `Limite ${formatHourValue(stats.weekly_limit)}`
-          }
-          progress={(Number(stats.weekly_hours || 0) / Math.max(1, Number(stats.weekly_limit || 44))) * 100}
-        />
-        <FormateurStatCard
-          icon={Bell}
-          iconClassName="bg-[#fff4e9] text-[#ff6f1f]"
-          label="Notifications"
-          value={stats.notifications}
-        />
-      </div>
-
-      <FormateurPanel className="p-6">
-        <FormateurSectionHeader
-          title="Visibilite Planning"
-          description="Planning hebdomadaire, modules planifies et alertes automatiques pour cette semaine."
-          action={
-            <div className="flex items-center gap-3">
-              <ExportFormateurButton
-                label="Exporter mon planning"
-                loadingLabel={exportStatusLabel}
-                position="bottom"
-                size="sm"
-                onClick={handleExportPlanning}
-                loading={exporting}
-              />
+          <div className="space-y-3">
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setWeek((current) => Math.max(1, Number(current || 1) - 1))}
+                disabled={week <= 1}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm transition duration-300 hover:bg-slate-50 disabled:opacity-40 dark:border-white/10 dark:bg-white/10 dark:text-white dark:shadow-none dark:hover:bg-white/15"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <div className="min-w-[132px] rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center text-sm font-semibold text-slate-700 dark:border-white/10 dark:bg-white/10 dark:text-white">
+                Semaine {week}
+              </div>
+              <button
+                type="button"
+                onClick={() => setWeek((current) => Math.min(maxWeek, Number(current || 1) + 1))}
+                disabled={week >= maxWeek}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm transition duration-300 hover:bg-slate-50 disabled:opacity-40 dark:border-white/10 dark:bg-white/10 dark:text-white dark:shadow-none dark:hover:bg-white/15"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="flex flex-wrap justify-end gap-3">
               <Link
                 to="/formateur/planning"
-                className="inline-flex items-center rounded-[14px] bg-[#eef4ff] px-4 py-2.5 text-sm font-semibold text-[#315cf0]"
+                className="hover-action inline-flex h-12 items-center justify-center rounded-2xl bg-gradient-to-r from-sky-500 via-blue-600 to-blue-700 px-5 text-sm font-semibold text-white shadow-sm transition duration-300 hover:brightness-105 dark:shadow-none"
               >
-                Voir le planning
+                Ouvrir mon planning
+              </Link>
+              <Link
+                to="/formateur/modules"
+                className="hover-action inline-flex h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700 shadow-sm transition duration-300 hover:bg-slate-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:shadow-none dark:hover:bg-white/15"
+              >
+                Mes modules
               </Link>
             </div>
-          }
-        />
-
-        {planningExportFeedback ? (
-          <div
-            className={`mt-4 rounded-[18px] border px-4 py-3 text-[14px] font-semibold ${
-              planningExportFeedback.tone === 'success'
-                ? 'border-[#cbead5] bg-[#effcf3] text-[#1b7b48]'
-                : 'border-[#ffd8d8] bg-[#fff5f5] text-[#cf4c4c]'
-            }`}
-          >
-            {planningExportFeedback.message}
           </div>
-        ) : null}
+        </div>
+      </PremiumCard>
 
-        <div className="mt-6 grid gap-4 xl:grid-cols-5 md:grid-cols-3">
-          {(planning?.daily_totals || []).length ? (
-            planning.daily_totals.map((day) => <PlanningDayChip key={day.label} day={day} />)
-          ) : (
-            <div className="xl:col-span-5 md:col-span-3">
-              <FormateurEmptyBlock
-                title="Planning non defini"
-                description="Aucune seance n est encore visible pour cette semaine."
+      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+        <PremiumMetricCard
+          icon={Clock3}
+          label="Charge semaine"
+          value={formatHourValue(overview?.stats?.weekly_hours)}
+          meta={`Cible ${formatHourValue(overview?.stats?.weekly_target_hours)} / limite ${formatHourValue(overview?.stats?.weekly_limit_hours)}`}
+          tone="brand"
+        />
+        <PremiumMetricCard
+          icon={BookOpen}
+          label="Modules actifs"
+          value={overview?.stats?.assigned_modules ?? 0}
+          meta={`${overview?.stats?.planning_entries ?? 0} seances planifiees`}
+          tone="default"
+        />
+        <PremiumMetricCard
+          icon={Users}
+          label="Groupes suivis"
+          value={overview?.stats?.groups_count ?? 0}
+          meta={`${overview?.stats?.average_progress ?? 0}% progression moyenne`}
+          tone="amber"
+        />
+        <PremiumMetricCard
+          icon={Bell}
+          label="Alertes et demandes"
+          value={(overview?.stats?.pending_requests ?? 0) + (overview?.stats?.planning_alerts ?? 0)}
+          meta={`${overview?.stats?.pending_requests ?? 0} demandes en attente`}
+          tone="rose"
+        />
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-12">
+        <PremiumCard className="xl:col-span-7" hover={false}>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-600 transition-colors duration-300 dark:text-slate-400">Progression annuelle</p>
+              <h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 transition-colors duration-300 dark:text-white">
+                {formatHourValue(overview?.progress?.value)} sur {formatHourValue(overview?.progress?.target)}
+              </h2>
+            </div>
+            <div className="rounded-2xl bg-blue-500/10 px-4 py-2 text-sm font-bold text-blue-700 transition-colors duration-300 dark:bg-blue-400/20 dark:text-blue-200">
+              {progressPercent}%
+            </div>
+          </div>
+
+          <div className="mt-6 overflow-hidden rounded-3xl bg-blue-50 p-5 transition-colors duration-300 dark:bg-blue-500/10">
+            <div className="h-4 rounded-full bg-slate-200 transition-colors duration-300 dark:bg-white/10">
+              <div
+                className="h-4 rounded-full bg-gradient-to-r from-sky-400 via-blue-500 to-blue-700"
+                style={{ width: `${progressPercent}%` }}
               />
             </div>
-          )}
-        </div>
-
-        <div className="mt-6 flex flex-wrap gap-3 text-sm">
-          <span className="rounded-full bg-[#edf3ff] px-3 py-1.5 font-semibold text-[#315cf0]">
-            Semaine {overview?.stats?.week ?? currentWeek ?? '-'}
-          </span>
-          {planning?.periods?.semester ? (
-            <span className="rounded-full bg-[#f5f6fb] px-3 py-1.5 font-semibold text-[#465775]">
-              {planning.periods.semester}
-            </span>
-          ) : null}
-          {(planning?.periods?.badges || []).map((badge) => (
-            <span
-              key={badge.label}
-              className={`rounded-full px-3 py-1.5 font-semibold text-white ${badge.label === 'Stage' ? 'bg-[#20c05c]' : 'bg-[#ff9b1f]'}`}
-            >
-              {badge.label}
-            </span>
-          ))}
-          {planning?.week_range?.label ? (
-            <span className="rounded-full bg-[#f5f7fb] px-3 py-1.5 font-semibold text-[#6e7f96]">
-              {planning.week_range.label}
-            </span>
-          ) : null}
-        </div>
-
-        <div className="mt-6 grid gap-4 xl:grid-cols-2">
-          <div className="rounded-[22px] bg-[#f7f9fd] px-5 py-5">
-            <p className="text-[14px] text-[#7486a1]">Total hebdomadaire</p>
-            <p className="mt-2 text-[30px] font-bold text-[#1d2a3f]">{formatHourValue(stats.weekly_hours)}</p>
-            <p className="mt-2 text-[14px] text-[#7486a1]">
-              {planning?.schedule?.length || 0} creneaux planifies
-            </p>
-          </div>
-          <div className="rounded-[22px] bg-[#f7f9fd] px-5 py-5">
-            <p className="text-[14px] text-[#7486a1]">Modules et taches</p>
-            <div className="mt-3 space-y-2">
-              {(planning?.schedule || []).slice(0, 3).map((entry) => (
-                <div key={entry.id} className="rounded-[16px] bg-white px-4 py-3">
-                  <p className="text-[14px] font-semibold text-[#1d2a3f]">
-                    {entry.day_label} · {entry.time_range}
-                  </p>
-                  <p className="mt-1 text-[13px] text-[#6f819a]">
-                    {entry.module_code} · {entry.task_label}
-                  </p>
-                </div>
-              ))}
-              {!(planning?.schedule || []).length ? (
-                <p className="text-[14px] text-[#7486a1]">Aucune tache planifiee pour le moment.</p>
-              ) : null}
+            <div className="mt-3 flex items-center justify-between text-sm text-[var(--color-text-muted)]">
+              <span>Objectif annuel</span>
+              <span>{overview?.progress?.is_above_target ? 'Au-dessus de l objectif' : 'Trajectoire en cours'}</span>
             </div>
           </div>
-        </div>
-      </FormateurPanel>
 
-      {planningAlerts.length ? (
-        <FormateurPanel className="p-6">
-          <FormateurSectionHeader
-            title="Alertes automatiques"
-            description="Le systeme surveille la charge hebdomadaire, les conflits, les periodes de stage et les examens."
-          />
-          <div className="mt-6 space-y-4">
-            {planningAlerts.map((alert, index) => (
-              <FormateurAlertCard key={`${alert.code || alert.message}-${index}`} alert={alert} />
+          <div className="mt-6 h-[280px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dailyTotals}>
+                <CartesianGrid stroke="var(--color-chart-grid)" strokeDasharray="3 3" />
+                <XAxis dataKey="label" tick={{ fill: 'var(--color-chart-tick)', fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: 'var(--color-chart-tick)', fontSize: 12 }} axisLine={false} tickLine={false} />
+                <Tooltip
+                  contentStyle={{
+                    background: 'var(--color-chart-tooltip-bg)',
+                    border: '1px solid var(--color-chart-tooltip-border)',
+                    borderRadius: '18px',
+                    color: 'var(--color-chart-tooltip-text)',
+                  }}
+                />
+                <Bar dataKey="hours" radius={[10, 10, 0, 0]} fill="var(--color-chart-line)" name="Heures" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </PremiumCard>
+
+        <PremiumCard className="xl:col-span-5" hover={false}>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--color-text-subtle)]">Signal de vigilance</p>
+              <h2 className="mt-2 text-2xl font-bold tracking-tight text-[var(--color-text-soft)]">Alertes prioritaires</h2>
+            </div>
+            <AlertTriangle className="h-6 w-6 text-[var(--color-warning-text)]" />
+          </div>
+
+          <div className="mt-6 space-y-3">
+            {alerts.length === 0 ? (
+              <div className="rounded-2xl border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface-strong)_74%,transparent)] px-4 py-4 text-sm text-[var(--color-text-muted)]">
+                Aucune alerte critique sur cette semaine.
+              </div>
+            ) : (
+              alerts.map((alert, index) => (
+                <div
+                  key={`${alert.code || alert.message}-${index}`}
+                  className="hover-card rounded-2xl border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface-strong)_74%,transparent)] px-4 py-4"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold text-[var(--color-text-soft)]">{alert.message}</p>
+                      {alert.details ? <p className="mt-1 text-sm leading-6 text-[var(--color-text-muted)]">{alert.details}</p> : null}
+                    </div>
+                    <span className="rounded-full bg-gradient-to-r from-amber-400 to-rose-500 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-white">
+                      {alert.type || 'info'}
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </PremiumCard>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-12">
+        <PremiumCard className="xl:col-span-5" hover={false}>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--color-text-subtle)]">Modules prioritaires</p>
+              <h2 className="mt-2 text-2xl font-bold tracking-tight text-[var(--color-text-soft)]">Portefeuille pedagogique</h2>
+            </div>
+            <GraduationCap className="h-6 w-6 text-[var(--color-primary)]" />
+          </div>
+
+          <div className="mt-6 space-y-3">
+            {displayedModules.map((module) => (
+              <div key={module.id} className="hover-card rounded-2xl border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface-strong)_74%,transparent)] px-4 py-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-[var(--color-text-soft)]">{module.code} · {module.intitule}</p>
+                    <p className="mt-1 text-sm text-[var(--color-text-muted)]">{module.filiere} · {module.semestre}</p>
+                  </div>
+                  <div className="rounded-2xl bg-[var(--color-primary-soft)] px-3 py-1.5 text-sm font-bold text-[var(--color-primary)]">
+                    {module.progress_percent ?? 0}%
+                  </div>
+                </div>
+                <div className="mt-4 h-2 rounded-full bg-[var(--color-border)]">
+                  <div
+                    className="h-2 rounded-full bg-gradient-to-r from-sky-400 via-blue-500 to-blue-700"
+                    style={{ width: `${Math.max(0, Math.min(100, Number(module.progress_percent || 0)))}%` }}
+                  />
+                </div>
+              </div>
             ))}
           </div>
-        </FormateurPanel>
-      ) : null}
+        </PremiumCard>
 
-      <div className="grid gap-6 xl:grid-cols-2">
-        <FormateurPanel className="p-6">
-          <FormateurSectionHeader title="Mes Modules" />
-          <div className="mt-6 space-y-4">
-            {displayedModules.length ? (
-              displayedModules.map((module) => <ModuleRow key={module.id} module={module} />)
-            ) : (
-              <FormateurEmptyBlock
-                title="Aucun module assigne"
-                description="Les modules affectes apparaitront ici des que le backend les remontera."
-              />
-            )}
+        <PremiumCard className="xl:col-span-7" hover={false}>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--color-text-subtle)]">Couverture de semaine</p>
+              <h2 className="mt-2 text-2xl font-bold tracking-tight text-[var(--color-text-soft)]">Groupes, evaluation et prochaines actions</h2>
+            </div>
+            <CalendarDays className="h-6 w-6 text-[var(--color-primary)]" />
           </div>
-        </FormateurPanel>
 
-        <FormateurPanel className="p-6">
-          <FormateurSectionHeader title="Mes Groupes" />
-          <div className="mt-6 space-y-4">
-            {overview?.groups?.length ? (
-              overview.groups.slice(0, 3).map((group) => <GroupRow key={group.id} group={group} />)
-            ) : (
-              <FormateurEmptyBlock
-                title="Aucun groupe disponible"
-                description="Les groupes derives des modules seront visibles ici."
-              />
-            )}
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <div className="rounded-2xl border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface-strong)_74%,transparent)] p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-text-subtle)]">Evaluation</p>
+              <p className="mt-3 text-3xl font-bold tracking-tight text-[var(--color-text-soft)]">
+                {overview?.evaluation?.percentage !== null ? `${Math.round(overview?.evaluation?.percentage || 0)}%` : '--'}
+              </p>
+              <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+                {overview?.evaluation?.submitted ? 'Questionnaire complete' : 'Aucune evaluation soumise'}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface-strong)_74%,transparent)] p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-text-subtle)]">Plage de semaine</p>
+              <p className="mt-3 text-2xl font-bold tracking-tight text-[var(--color-text-soft)]">
+                {overview?.planning?.week_range?.label || 'Calendrier indisponible'}
+              </p>
+              <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+                {overview?.planning?.periods?.semester || currentSemester || '-'}
+              </p>
+            </div>
           </div>
-        </FormateurPanel>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <div className="rounded-2xl border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface-strong)_74%,transparent)] p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-text-subtle)]">Groupes suivis</p>
+              <div className="mt-3 space-y-3">
+                {displayedGroups.length === 0 ? (
+                  <p className="text-sm text-[var(--color-text-muted)]">Aucun groupe rattache pour cette periode.</p>
+                ) : (
+                  displayedGroups.map((group) => (
+                    <div key={group.id} className="flex items-center justify-between gap-3 text-sm">
+                      <span className="text-[var(--color-text-soft)]">{group.code}</span>
+                      <span className="text-[var(--color-text-muted)]">{group.student_count} etudiants</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface-strong)_74%,transparent)] p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-text-subtle)]">Raccourcis</p>
+              <div className="mt-3 grid gap-3">
+                <Link to="/formateur/planning" className="hover-action inline-flex h-11 items-center justify-center rounded-2xl bg-gradient-to-r from-sky-400 via-blue-500 to-blue-700 px-4 text-sm font-semibold text-white shadow-sm dark:shadow-none">
+                  Ouvrir la semaine detaillee
+                </Link>
+                <Link to="/formateur/demande" className="hover-action inline-flex h-11 items-center justify-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-strong)] px-4 text-sm font-semibold text-[var(--color-text-soft)]">
+                  Gerer mes demandes
+                </Link>
+              </div>
+            </div>
+          </div>
+        </PremiumCard>
       </div>
     </div>
   );

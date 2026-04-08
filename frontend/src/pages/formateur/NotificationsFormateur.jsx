@@ -5,18 +5,18 @@ import { FormateurEmptyBlock, FormateurPanel, FormateurSectionHeader, FormateurS
 
 function notificationClasses(tone) {
   if (tone === 'success') {
-    return 'border-[#bff0cc] bg-[#effcf3] text-[#1d5b34]';
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-200';
   }
 
   if (tone === 'warning') {
-    return 'border-[#f3d970] bg-[#fff9e8] text-[#7a5e00]';
+    return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200';
   }
 
   if (tone === 'danger') {
-    return 'border-[#f6cccc] bg-[#fff3f3] text-[#8a3c3c]';
+    return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200';
   }
 
-  return 'border-[#bfdcff] bg-[#eef5ff] text-[#28539e]';
+  return 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-400/20 dark:bg-blue-500/10 dark:text-blue-200';
 }
 
 function formatDate(value) {
@@ -72,28 +72,28 @@ export default function NotificationsFormateur() {
   if (loading) {
     return (
       <div className="flex min-h-[55vh] items-center justify-center">
-        <Spinner className="h-11 w-11 border-[#dbe3ef] border-t-[#1f57ff]" />
+        <Spinner className="h-11 w-11 border-slate-200 border-t-blue-600 dark:border-white/10 dark:border-t-blue-400" />
       </div>
     );
   }
 
   return (
     <div className="space-y-6 pb-8">
-      <div className="rounded-[28px] bg-[#f7f9fd] px-6 py-7">
-        <h1 className="text-[22px] font-bold tracking-tight text-[#1f2a3d]">Notifications</h1>
-        <p className="mt-2 text-[15px] text-[#75859c]">
+      <div className="theme-card-muted rounded-[28px] border border-[var(--color-border)] px-6 py-7">
+        <h1 className="theme-text-primary text-[22px] font-bold tracking-tight">Notifications</h1>
+        <p className="theme-text-muted mt-2 text-[15px]">
           {payload?.summary?.unread || 0} notifications non lues
         </p>
       </div>
 
       {error ? (
-        <FormateurPanel className="px-6 py-5 text-[15px] font-semibold text-[#b54545]">{error}</FormateurPanel>
+        <FormateurPanel className="theme-status-danger px-6 py-5 text-[15px] font-semibold">{error}</FormateurPanel>
       ) : null}
 
       <div className="grid gap-4 xl:grid-cols-3">
-        <FormateurStatCard icon={() => null} iconClassName="hidden" label="Total" value={payload?.summary?.total || 0} />
-        <FormateurStatCard icon={() => null} iconClassName="hidden" label="Validations" value={payload?.summary?.validations || 0} />
-        <FormateurStatCard icon={() => null} iconClassName="hidden" label="Alertes" value={payload?.summary?.alertes || 0} />
+        <FormateurStatCard className="hover-card" icon={() => null} iconClassName="hidden" label="Total" value={payload?.summary?.total || 0} />
+        <FormateurStatCard className="hover-card" icon={() => null} iconClassName="hidden" label="Validations" value={payload?.summary?.validations || 0} />
+        <FormateurStatCard className="hover-card" icon={() => null} iconClassName="hidden" label="Alertes" value={payload?.summary?.alertes || 0} />
       </div>
 
       <FormateurPanel className="p-6">
@@ -103,7 +103,7 @@ export default function NotificationsFormateur() {
             payload.notifications.map((notification) => (
               <div
                 key={notification.id}
-                className={`rounded-[20px] border px-5 py-4 shadow-[0_8px_20px_rgba(15,23,42,0.04)] ${notificationClasses(notification.tone)}`}
+                className={`hover-row rounded-[20px] border px-5 py-4 shadow-[0_8px_20px_rgba(15,23,42,0.04)] ${notificationClasses(notification.tone)}`}
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">

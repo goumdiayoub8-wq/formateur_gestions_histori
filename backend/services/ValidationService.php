@@ -44,10 +44,6 @@ class ValidationService
             throw new ConflictException('Ce module est deja affecte a ce formateur.');
         }
 
-        if ($this->affectations->findModuleAssignmentForYear($moduleId, $annee, $ignoreAssignmentId)) {
-            throw new ConflictException('Ce module est deja affecte a un autre formateur pour cette annee.');
-        }
-
         $annualHours = $this->affectations->getTrainerAnnualHours($formateurId, $annee, $ignoreAssignmentId);
         $nextAnnualHours = $annualHours + floatval($module['volume_horaire']);
 

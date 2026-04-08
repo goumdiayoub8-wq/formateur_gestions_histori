@@ -52,6 +52,7 @@ if ($action === 'validation-bulk' && $method === 'POST') {
 }
 
 if ($action === 'weekly' && $method === 'GET') {
+    requireAuth();
     $controller->getWeeklyPlanning();
     return;
 }
@@ -75,11 +76,13 @@ if ($action === 'visibility' && $method === 'GET') {
 }
 
 if ($action === 'team-visibility' && $method === 'GET') {
+    requireAuth();
     $controller->getTeamVisibility();
     return;
 }
 
 if ($action === 'stats' && $method === 'GET') {
+    requireAuth();
     $controller->getWeeklyStats();
     return;
 }
@@ -91,6 +94,7 @@ if ($action === 'session-status' && $method === 'POST') {
 }
 
 if ($action === 'entry-decision' && $method === 'POST') {
+    requireAuth();
     $controller->createEntryDecisionRequest();
     return;
 }
@@ -98,6 +102,12 @@ if ($action === 'entry-decision' && $method === 'POST') {
 if ($action === 'entry-status' && $method === 'POST') {
     requireRole([1, 2]);
     $controller->reviewEntryDecisionRequest();
+    return;
+}
+
+if ($action === 'entry-status-bulk' && $method === 'POST') {
+    requireRole([1, 2]);
+    $controller->bulkReviewEntryDecisionRequest();
     return;
 }
 
@@ -114,11 +124,13 @@ if ($action === 'delete-entry' && in_array($method, ['POST', 'DELETE'], true)) {
 }
 
 if ($action === 'mes-modules' && $method === 'GET') {
+    requireAuth();
     $controller->getMesModules();
     return;
 }
 
 if ($method === 'GET' && $id === null) {
+    requireAuth();
     $controller->index();
     return;
 }
@@ -130,6 +142,7 @@ if ($method === 'POST' && $id === null) {
 }
 
 if ($id !== null && $method === 'GET') {
+    requireAuth();
     $controller->show($id);
     return;
 }

@@ -12,7 +12,7 @@ if (!is_file($envPath)) {
     loadEnvironment($envExamplePath);
 }
 
-const APP_BOOTSTRAP_VERSION = '2026-03-31-questionnaire-module-scope';
+const APP_BOOTSTRAP_VERSION = '2026-04-06-database-only-schema';
 
 function readLegacyDatabaseConfig(string $filePath): array
 {
@@ -135,6 +135,8 @@ function tableExists(PDO $connection, string $table): bool
 function hasRequiredTables(PDO $connection): bool
 {
     $requiredTables = [
+        'system_meta',
+        'request_throttles',
         'academic_config',
         'formateurs',
         'modules',
@@ -142,6 +144,7 @@ function hasRequiredTables(PDO $connection): bool
         'salles',
         'utilisateurs',
         'module_groupes',
+        'module_questionnaires',
         'affectations',
         'planning',
         'planning_submissions',
@@ -150,6 +153,8 @@ function hasRequiredTables(PDO $connection): bool
         'recent_activities',
         'reports',
         'formateur_modules',
+        'formateur_module_preferences',
+        'formateur_module_scores',
         'ai_scores',
         'evaluation_questionnaires',
         'evaluation_questions',
@@ -221,6 +226,37 @@ function indexExists(PDO $connection, string $table, string $index): bool
     return (bool) $statement->fetch();
 }
 
+function foreignKeyExists(PDO $connection, string $table, string $constraint): bool
+{
+    $statement = $connection->prepare(
+        'SELECT COUNT(*)
+         FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = :table_name
+           AND CONSTRAINT_NAME = :constraint_name
+           AND CONSTRAINT_TYPE = "FOREIGN KEY"'
+    );
+    $statement->execute([
+        'table_name' => $table,
+        'constraint_name' => $constraint,
+    ]);
+
+    return intval($statement->fetchColumn()) > 0;
+}
+
+function dropIndexIfExists(PDO $connection, string $table, string $index): void
+{
+    if (!indexExists($connection, $table, $index)) {
+        return;
+    }
+
+    $connection->exec(sprintf(
+        'ALTER TABLE `%s` DROP INDEX `%s`',
+        str_replace('`', '``', $table),
+        str_replace('`', '``', $index)
+    ));
+}
+
 function generateSecureQuestionnaireToken(): string
 {
     return strtolower(bin2hex(random_bytes(24)));
@@ -276,6 +312,58 @@ function ensurePlanningSubmissionSnapshotColumns(PDO $connection): void
     }
 }
 
+function ensurePlanningSubmissionCompatibilityColumns(PDO $connection): void
+{
+    if (!tableExists($connection, 'planning_submissions')) {
+        return;
+    }
+
+    if (!columnExists($connection, 'planning_submissions', 'reviewed_at')) {
+        $connection->exec(
+            'ALTER TABLE planning_submissions
+             ADD COLUMN reviewed_at DATETIME DEFAULT NULL AFTER submitted_at'
+        );
+    }
+
+    if (!columnExists($connection, 'planning_submissions', 'created_at')) {
+        $connection->exec(
+            'ALTER TABLE planning_submissions
+             ADD COLUMN created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP AFTER reviewed_at'
+        );
+    }
+
+    if (!columnExists($connection, 'planning_submissions', 'updated_at')) {
+        $connection->exec(
+            'ALTER TABLE planning_submissions
+             ADD COLUMN updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at'
+        );
+    }
+
+    $connection->exec(
+        'UPDATE planning_submissions
+         SET processed_at = COALESCE(processed_at, reviewed_at),
+             reviewed_at = COALESCE(reviewed_at, processed_at),
+             created_at = COALESCE(created_at, submitted_at),
+             updated_at = COALESCE(updated_at, processed_at, reviewed_at, submitted_at)'
+    );
+}
+
+function ensureAffectationIndexes(PDO $connection): void
+{
+    if (!tableExists($connection, 'affectations')) {
+        return;
+    }
+
+    dropIndexIfExists($connection, 'affectations', 'uq_affectation_module_annee');
+
+    if (!indexExists($connection, 'affectations', 'uq_affectation_formateur_module_annee')) {
+        $connection->exec(
+            'ALTER TABLE affectations
+             ADD UNIQUE KEY uq_affectation_formateur_module_annee (formateur_id, module_id, annee)'
+        );
+    }
+}
+
 function ensureModuleQuestionnairesTable(PDO $connection): void
 {
     if (!tableExists($connection, 'modules')) {
@@ -288,7 +376,6 @@ function ensureModuleQuestionnairesTable(PDO $connection): void
             module_id int NOT NULL,
             questionnaire_id varchar(120) NOT NULL,
             questionnaire_token varchar(64) DEFAULT NULL,
-            google_form_id varchar(191) DEFAULT NULL,
             total_questions int NOT NULL DEFAULT 20,
             created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at timestamp NULL DEFAULT NULL,
@@ -296,19 +383,11 @@ function ensureModuleQuestionnairesTable(PDO $connection): void
             UNIQUE KEY uq_module_questionnaires_module (module_id),
             UNIQUE KEY uq_module_questionnaires_questionnaire (questionnaire_id),
             UNIQUE KEY uq_module_questionnaires_token (questionnaire_token),
-            UNIQUE KEY uq_module_questionnaires_google_form (google_form_id),
             CONSTRAINT fk_module_questionnaires_module
                 FOREIGN KEY (module_id) REFERENCES modules (id)
                 ON DELETE CASCADE ON UPDATE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
     );
-
-    if (!columnExists($connection, 'module_questionnaires', 'last_synced_at')) {
-        $connection->exec(
-            'ALTER TABLE module_questionnaires
-             ADD COLUMN last_synced_at DATETIME DEFAULT NULL AFTER total_questions'
-        );
-    }
 
     if (!columnExists($connection, 'module_questionnaires', 'questionnaire_token')) {
         $connection->exec(
@@ -406,6 +485,24 @@ function ensureEvaluationSubmissionScopeColumns(PDO $connection): void
         );
     }
 
+    if (!foreignKeyExists($connection, 'evaluation_answers', 'fk_evaluation_answers_module')) {
+        $connection->exec(
+            'ALTER TABLE evaluation_answers
+             ADD CONSTRAINT fk_evaluation_answers_module
+             FOREIGN KEY (module_id) REFERENCES modules (id)
+             ON DELETE SET NULL ON UPDATE CASCADE'
+        );
+    }
+
+    if (!foreignKeyExists($connection, 'evaluation_scores', 'fk_evaluation_scores_module')) {
+        $connection->exec(
+            'ALTER TABLE evaluation_scores
+             ADD CONSTRAINT fk_evaluation_scores_module
+             FOREIGN KEY (module_id) REFERENCES modules (id)
+             ON DELETE CASCADE ON UPDATE CASCADE'
+        );
+    }
+
     if (indexExists($connection, 'evaluation_answers', 'uq_answers_formateur_question')) {
         $connection->exec(
             'ALTER TABLE evaluation_answers
@@ -441,6 +538,35 @@ function ensureFormateurModuleScoresTable(PDO $connection): void
                 FOREIGN KEY (formateur_id) REFERENCES formateurs (id)
                 ON DELETE CASCADE ON UPDATE CASCADE,
             CONSTRAINT fk_formateur_module_scores_module
+                FOREIGN KEY (module_id) REFERENCES modules (id)
+                ON DELETE CASCADE ON UPDATE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+}
+
+function ensureFormateurModulePreferencesTable(PDO $connection): void
+{
+    if (!tableExists($connection, 'formateurs') || !tableExists($connection, 'modules')) {
+        return;
+    }
+
+    $connection->exec(
+        'CREATE TABLE IF NOT EXISTS formateur_module_preferences (
+            id int NOT NULL AUTO_INCREMENT,
+            formateur_id int NOT NULL,
+            module_id int NOT NULL,
+            status enum("pending","accepted","rejected") NOT NULL DEFAULT "pending",
+            message_chef text DEFAULT NULL,
+            created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY uq_formateur_module_preferences_pair (formateur_id, module_id),
+            KEY idx_formateur_module_preferences_status (status),
+            KEY idx_formateur_module_preferences_module (module_id),
+            CONSTRAINT fk_formateur_module_preferences_formateur
+                FOREIGN KEY (formateur_id) REFERENCES formateurs (id)
+                ON DELETE CASCADE ON UPDATE CASCADE,
+            CONSTRAINT fk_formateur_module_preferences_module
                 FOREIGN KEY (module_id) REFERENCES modules (id)
                 ON DELETE CASCADE ON UPDATE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
@@ -563,28 +689,6 @@ function getDatabaseConnection(): PDO
             503,
             'La connexion MySQL fonctionne mais la base de donnees demandee est inaccessible. Verifiez DB_NAME dans backend/.env ou backend/config/config.php.'
         );
-    }
-
-    ensureSystemMetaTable($connection);
-    ensureRequestThrottlesTable($connection);
-    ensurePlanningSubmissionSnapshotColumns($connection);
-    ensureModuleQuestionnairesTable($connection);
-    ensureEvaluationSubmissionScopeColumns($connection);
-    ensureFormateurModuleScoresTable($connection);
-    ensureModuleQuestionnaireMappings($connection);
-
-    if (!hasRequiredTables($connection)) {
-        bootstrapSchema($connection);
-        ensureSystemMetaTable($connection);
-        ensureRequestThrottlesTable($connection);
-        ensurePlanningSubmissionSnapshotColumns($connection);
-        ensureModuleQuestionnairesTable($connection);
-        ensureEvaluationSubmissionScopeColumns($connection);
-        ensureFormateurModuleScoresTable($connection);
-        ensureModuleQuestionnaireMappings($connection);
-        setSystemMeta($connection, 'app_bootstrap_version', APP_BOOTSTRAP_VERSION);
-    } elseif (getSystemMeta($connection, 'app_bootstrap_version') === null) {
-        setSystemMeta($connection, 'app_bootstrap_version', APP_BOOTSTRAP_VERSION);
     }
 
     return $connection;

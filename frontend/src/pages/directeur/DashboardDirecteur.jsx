@@ -1,12 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, BookOpen, CalendarRange, CheckCircle2, Settings2, Users2 } from 'lucide-react';
+import { AlertTriangle, BarChart3, BookOpen, CheckCircle2, Clock3, ShieldCheck, Users2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import DashboardService from '../../services/dashboardService';
-import DirectorSurface from '../../components/director/DirectorSurface';
-import DirectorStatCard from '../../components/director/DirectorStatCard';
+import { PremiumCard, PremiumMetricCard } from '../../components/ui/PremiumCard';
+import { SkeletonChartPanel, SkeletonPremiumCard } from '../../components/ui/Skeleton';
 import DirectorStatusPill from '../../components/director/DirectorStatusPill';
 import useAcademicConfig from '../../hooks/useAcademicConfig';
+import { Avatar } from '../../components/ui/Avatar';
+
+const PIE_COLORS = ['var(--color-chart-line)', 'var(--color-warning-text)', 'var(--color-danger-text)'];
 
 function formatRelativeDate(value) {
   if (!value) {
@@ -14,23 +17,49 @@ function formatRelativeDate(value) {
   }
 
   const date = new Date(value);
-  const diffHours = Math.round((Date.now() - date.getTime()) / 3600000);
-  if (diffHours <= 1) {
-    return 'Il y a 1h';
-  }
+  const diffHours = Math.max(1, Math.round((Date.now() - date.getTime()) / 3600000));
 
   if (diffHours < 24) {
     return `Il y a ${diffHours}h`;
   }
 
-  const diffDays = Math.round(diffHours / 24);
+  const diffDays = Math.max(1, Math.round(diffHours / 24));
   return `Il y a ${diffDays}j`;
 }
 
-const pieColors = ['#1db885', '#f8a30b', '#f44747'];
-
 function formatPercent(value) {
   return `${Math.round(Number(value || 0))}%`;
+}
+
+function DirectorDashboardSkeleton() {
+  return (
+    <div className="space-y-6">
+      <PremiumCard className="overflow-hidden border border-slate-200 bg-white p-8 text-slate-900 shadow-sm dark:border-white/10 dark:bg-gradient-to-br dark:from-slate-900 dark:via-blue-950 dark:to-sky-900 dark:text-white dark:shadow-none" hover={false}>
+        <div className="space-y-4">
+          <div className="h-4 w-36 rounded-full bg-slate-200 dark:bg-white/15" />
+          <div className="h-10 w-3/5 rounded-2xl bg-slate-100 dark:bg-white/10" />
+          <div className="h-5 w-2/5 rounded-2xl bg-slate-100 dark:bg-white/10" />
+        </div>
+      </PremiumCard>
+
+      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 4 }, (_, index) => (
+          <SkeletonPremiumCard key={index} />
+        ))}
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-12">
+        <SkeletonChartPanel className="xl:col-span-5" />
+        <SkeletonChartPanel className="xl:col-span-7" />
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-12">
+        <SkeletonChartPanel className="xl:col-span-4" />
+        <SkeletonChartPanel className="xl:col-span-4" />
+        <SkeletonChartPanel className="xl:col-span-4" />
+      </div>
+    </div>
+  );
 }
 
 export default function DashboardDirecteur() {
@@ -45,7 +74,6 @@ export default function DashboardDirecteur() {
     currentSemester,
     inStagePeriod,
     inExamPeriod,
-    validation,
   } = useAcademicConfig();
 
   useEffect(() => {
@@ -61,7 +89,7 @@ export default function DashboardDirecteur() {
         }
       } catch (loadError) {
         if (active) {
-          setError(loadError.message || 'Impossible de charger le tableau de bord.');
+          setError(loadError?.message || 'Impossible de charger le tableau de bord directeur.');
         }
       } finally {
         if (active) {
@@ -71,6 +99,7 @@ export default function DashboardDirecteur() {
     };
 
     load();
+
     return () => {
       active = false;
     };
@@ -82,414 +111,318 @@ export default function DashboardDirecteur() {
     }
 
     return [
-      { name: 'Validés', value: overview.validation_status.validated },
-      { name: 'En attente', value: overview.validation_status.pending },
-      { name: 'À réviser', value: overview.validation_status.revision },
+      { name: 'Valides', value: Number(overview.validation_status.validated || 0) },
+      { name: 'En attente', value: Number(overview.validation_status.pending || 0) },
+      { name: 'Revision', value: Number(overview.validation_status.revision || 0) },
     ];
   }, [overview]);
 
-  const validationLegendItems = useMemo(
-    () =>
-      pieData.map((item, index) => ({
-        ...item,
-        color: pieColors[index % pieColors.length],
-      })),
-    [pieData],
-  );
+  const hourSeries = Array.isArray(overview?.hours_by_filiere) ? overview.hours_by_filiere.slice(0, 6) : [];
+  const ranking = Array.isArray(overview?.trainer_ranking) ? overview.trainer_ranking : [];
+  const recentActivities = Array.isArray(overview?.recent_activities) ? overview.recent_activities.slice(0, 6) : [];
+  const bestModules = Array.isArray(overview?.module_highlights?.best) ? overview.module_highlights.best : [];
+  const worstModules = Array.isArray(overview?.module_highlights?.worst) ? overview.module_highlights.worst : [];
 
   if (loading) {
-    return <div className="rounded-[24px] border border-[#dfe6f3] bg-white px-6 py-16 text-center text-[#64748b]">Chargement du tableau de bord...</div>;
+    return <DirectorDashboardSkeleton />;
   }
 
   if (error) {
-    return <div className="rounded-[24px] border border-[#ffd9d9] bg-[#fff5f5] px-6 py-6 text-[#d14343]">{error}</div>;
+    return (
+      <PremiumCard className="border-[var(--color-danger-border)] bg-[var(--color-danger-bg)] p-6 text-[var(--color-danger-text)]" hover={false}>
+        <h1 className="text-xl font-bold tracking-tight">Tableau de bord indisponible</h1>
+        <p className="mt-2 text-sm leading-7">{error}</p>
+      </PremiumCard>
+    );
   }
 
   return (
     <div className="space-y-6">
-      <div className="rounded-[24px] bg-[linear-gradient(90deg,_#4f35f2_0%,_#7a24f8_55%,_#a414ff_100%)] px-6 py-7 text-white">
-        <h1 className="text-[28px] font-semibold tracking-tight">{overview?.hero?.title}</h1>
-        <p className="mt-2 text-lg text-white/80">{overview?.hero?.subtitle}</p>
-        <div className="mt-5 flex flex-wrap items-center gap-3 text-sm">
-          <span className="rounded-full bg-white/14 px-3 py-1.5 font-semibold">{academicYearLabel || 'Annee non definie'}</span>
-          <span className="rounded-full bg-white/14 px-3 py-1.5 font-semibold">Semaine {currentWeek ?? '-'}</span>
-          <span className="rounded-full bg-white/14 px-3 py-1.5 font-semibold">{currentSemester || '-'}</span>
-          {inStagePeriod ? <span className="rounded-full bg-[#20c05c] px-3 py-1.5 font-semibold text-white">Stage</span> : null}
-          {inExamPeriod ? <span className="rounded-full bg-[#ff9b1f] px-3 py-1.5 font-semibold text-white">Exam</span> : null}
+      <PremiumCard className="overflow-hidden border border-slate-200 bg-white p-8 text-slate-900 shadow-sm dark:border-white/10 dark:bg-gradient-to-br dark:from-slate-900 dark:via-blue-950 dark:to-sky-900 dark:text-white dark:shadow-none" hover={false}>
+        <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+          <div className="space-y-4">
+            <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-600 dark:border-white/10 dark:bg-white/10 dark:text-sky-100">
+              Pilotage executif
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">{overview?.hero?.title || 'Tableau de bord directeur'}</h1>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600 dark:text-slate-200">{overview?.hero?.subtitle}</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 text-sm">
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-600 dark:border-white/10 dark:bg-white/10 dark:text-white">{academicYearLabel || 'Annee non definie'}</span>
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-600 dark:border-white/10 dark:bg-white/10 dark:text-white">Semaine {currentWeek ?? '-'}</span>
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-600 dark:border-white/10 dark:bg-white/10 dark:text-white">{currentSemester || '-'}</span>
+              {inStagePeriod ? <span className="rounded-full bg-emerald-50 px-3 py-1.5 font-semibold text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-100">Stage</span> : null}
+              {inExamPeriod ? <span className="rounded-full bg-amber-50 px-3 py-1.5 font-semibold text-amber-700 dark:bg-amber-400/20 dark:text-amber-100">Exam</span> : null}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <Link
+              to="/directeur/validation-planning"
+              className="hover-action inline-flex h-12 items-center justify-center rounded-2xl bg-gradient-to-r from-sky-500 via-blue-600 to-blue-700 px-5 text-sm font-semibold text-white shadow-sm transition duration-300 hover:brightness-105 dark:shadow-none"
+            >
+              Ouvrir les validations
+            </Link>
+            <Link
+              to="/directeur/academic-config"
+              className="hover-action inline-flex h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700 shadow-sm transition duration-300 hover:bg-slate-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:shadow-none dark:hover:bg-white/15"
+            >
+              Configurer le calendrier
+            </Link>
+          </div>
         </div>
-      </div>
+      </PremiumCard>
 
       {!academicLoading && !config ? (
-        <div className="rounded-[24px] border border-[#ffe4b3] bg-[#fff8ea] px-6 py-5 text-[#9a6500]">
-          Configurez l&apos;annee scolaire pour activer les calculs de semaine et de semestre.
-        </div>
+        <PremiumCard className="border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] p-5 text-[var(--color-warning-text)]" hover={false}>
+          Configurez l annee scolaire pour fiabiliser les calculs de semaine, de semestre et de progression.
+        </PremiumCard>
       ) : null}
 
-      {!academicLoading && config && !validation.isValid ? (
-        <div className="rounded-[24px] border border-[#ffd9d9] bg-[#fff5f5] px-6 py-5 text-[#d14343]">
-          La configuration academique est invalide. Corrigez-la dans la page de configuration.
-        </div>
-      ) : null}
-
-      <div className="grid gap-5 xl:grid-cols-4">
-        <DirectorStatCard
+      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+        <PremiumMetricCard
           icon={AlertTriangle}
-          iconWrapperClassName="bg-[#fff4eb]"
-          iconClassName="text-[#ff5a15]"
           label="Validations en attente"
           value={overview?.kpis?.pending_validations ?? 0}
-          hint="En attente"
+          meta="Soumissions a arbitrer"
+          tone="amber"
+          delay={0}
         />
-
-        <DirectorStatCard
-          icon={CheckCircle2}
-          iconWrapperClassName="bg-[#eaf9ee]"
-          iconClassName="text-[#19b44b]"
-          label="Taux de Validation"
-          value={`${overview?.kpis?.validation_rate ?? 0}%`}
-          hint={`↗ +${overview?.kpis?.validation_rate_delta ?? 0}`}
-        >
-          <div className="h-2 w-[135px] overflow-hidden rounded-full bg-[#edf3ef]">
-            <div
-              className="h-full rounded-full bg-[#22c55e]"
-              style={{ width: `${Math.max(0, Math.min(overview?.kpis?.validation_rate ?? 0, 100))}%` }}
-            />
-          </div>
-        </DirectorStatCard>
-
-        <DirectorStatCard
+        <PremiumMetricCard
+          icon={ShieldCheck}
+          label="Taux de validation"
+          value={formatPercent(overview?.kpis?.validation_rate)}
+          meta={`Cette semaine: ${overview?.kpis?.validation_rate_delta ?? 0}`}
+          tone="brand"
+          delay={0.05}
+        />
+        <PremiumMetricCard
           icon={BookOpen}
-          iconWrapperClassName="bg-[#eef3ff]"
-          iconClassName="text-[#3567ff]"
           label="Modules en cours"
           value={overview?.kpis?.modules_in_progress ?? 0}
+          meta="Charge pedagogique active"
+          tone="default"
+          delay={0.1}
         />
-
-        <DirectorStatCard
+        <PremiumMetricCard
           icon={Users2}
-          iconWrapperClassName="bg-[#f5eaff]"
-          iconClassName="text-[#9d38ff]"
           label="Groupes actifs"
           value={overview?.kpis?.active_groups ?? 0}
+          meta="Couverts cette periode"
+          tone="rose"
+          delay={0.15}
         />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-4">
-        <DirectorStatCard
-          icon={CalendarRange}
-          iconWrapperClassName="bg-[#eef8ff]"
-          iconClassName="text-[#2680eb]"
-          label="Progression globale"
-          value={formatPercent(overview?.global_performance?.completion_rate ?? 0)}
-          hint="Modules"
-        />
-        <DirectorStatCard
-          icon={BookOpen}
-          iconWrapperClassName="bg-[#fff6ea]"
-          iconClassName="text-[#f59e0b]"
-          label="Couverture planning"
-          value={formatPercent(overview?.global_performance?.planned_coverage_rate ?? 0)}
-          hint="Validé"
-        />
-        <DirectorStatCard
-          icon={Users2}
-          iconWrapperClassName="bg-[#edfdf2]"
-          iconClassName="text-[#16a34a]"
-          label="Taux questionnaires"
-          value={formatPercent(overview?.global_performance?.questionnaire_completion_rate ?? 0)}
-          hint="Réponses"
-        />
-        <DirectorStatCard
-          icon={CheckCircle2}
-          iconWrapperClassName="bg-[#f7efff]"
-          iconClassName="text-[#8b5cf6]"
-          label="Note moyenne"
-          value={`${Math.round(overview?.global_performance?.questionnaire_average ?? 0)}%`}
-          hint="Evaluation"
-        />
-      </div>
-
-      <DirectorSurface className="p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h2 className="text-[20px] font-semibold text-[#18243a]">Calendrier Académique</h2>
-            <p className="mt-2 text-[15px] text-[#6b7a92]">
-              Suivi dynamique de l&apos;annee scolaire pour les dashboards et calculs hebdomadaires.
-            </p>
-          </div>
-          <Link
-            to="/directeur/academic-config"
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-[16px] bg-[linear-gradient(90deg,_#4f35f2_0%,_#7a24f8_55%,_#d31391_100%)] px-4 text-[14px] font-semibold text-white"
-          >
-            <Settings2 className="h-4 w-4" />
-            Configurer
-          </Link>
-        </div>
-
-        <div className="mt-6 grid gap-4 lg:grid-cols-4">
-          <div className="rounded-[18px] border border-[#e7edf6] bg-[#f9fbff] px-4 py-4">
-            <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#95a3b7]">Année</p>
-            <p className="mt-3 text-[18px] font-semibold text-[#1f2a3d]">{academicYearLabel || '-'}</p>
-          </div>
-          <div className="rounded-[18px] border border-[#e7edf6] bg-[#f9fbff] px-4 py-4">
-            <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#95a3b7]">Début</p>
-            <p className="mt-3 text-[18px] font-semibold text-[#1f2a3d]">{config?.start_date || '-'}</p>
-          </div>
-          <div className="rounded-[18px] border border-[#e7edf6] bg-[#f9fbff] px-4 py-4">
-            <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#95a3b7]">Semestre actuel</p>
-            <p className="mt-3 text-[18px] font-semibold text-[#1f2a3d]">{currentSemester || '-'}</p>
-          </div>
-          <div className="rounded-[18px] border border-[#e7edf6] bg-[#f9fbff] px-4 py-4">
-            <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#95a3b7]">Examen régional</p>
-            <p className="mt-3 text-[18px] font-semibold text-[#1f2a3d]">{config?.exam_regional_date || '-'}</p>
-          </div>
-        </div>
-      </DirectorSurface>
-
-      <div className="grid gap-5 xl:grid-cols-2">
-        <DirectorSurface className="director-validation-section p-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div className="grid gap-5 xl:grid-cols-12">
+        <PremiumCard className="xl:col-span-5" hover={false}>
+          <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-[20px] font-semibold text-[#18243a]">État des Validations</h2>
-              <p className="mt-2 text-[15px] text-[#6b7a92]">
-                Répartition claire des validations, avec un survol plus lisible et des repères fixes.
-              </p>
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-600 transition-colors duration-300 dark:text-slate-400">Validation globale</p>
+              <h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 transition-colors duration-300 dark:text-white">Etat du pipeline de validation</h2>
             </div>
-            <div className="director-validation-legend">
-              {validationLegendItems.map((item) => (
-                <div key={item.name} className="director-validation-legend-item">
-                  <span className="director-validation-legend-dot" style={{ backgroundColor: item.color }} />
-                  <span className="director-validation-legend-label">{item.name}</span>
-                  <span className="director-validation-legend-value">{item.value}</span>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-600 transition-colors duration-300 dark:border-white/10 dark:bg-slate-900 dark:text-slate-400">
+              {pieData.reduce((sum, item) => sum + item.value, 0)} soumissions
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_220px]">
+            <div className="h-[260px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={62} outerRadius={92} paddingAngle={4}>
+                    {pieData.map((item, index) => (
+                      <Cell key={item.name} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      background: 'var(--color-chart-tooltip-bg)',
+                      border: '1px solid var(--color-chart-tooltip-border)',
+                      borderRadius: '18px',
+                      color: 'var(--color-chart-tooltip-text)',
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="space-y-3">
+              {pieData.map((item, index) => (
+                <div key={item.name} className="rounded-2xl border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface-strong)_72%,transparent)] px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <span className="h-3 w-3 rounded-full" style={{ backgroundColor: PIE_COLORS[index % PIE_COLORS.length] }} />
+                      <span className="text-sm font-semibold text-[var(--color-text-soft)]">{item.name}</span>
+                    </div>
+                    <span className="text-sm text-[var(--color-text-muted)]">{item.value}</span>
+                  </div>
                 </div>
               ))}
             </div>
           </div>
+        </PremiumCard>
+
+        <PremiumCard className="xl:col-span-7" hover={false}>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--color-text-subtle)]">Charge par filiere</p>
+              <h2 className="mt-2 text-2xl font-bold tracking-tight text-[var(--color-text-soft)]">Heures planifiees et executees</h2>
+            </div>
+            <div className="rounded-2xl border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface-strong)_72%,transparent)] px-4 py-2 text-sm font-semibold text-[var(--color-text-muted)]">
+              Vue agregee
+            </div>
+          </div>
+
           <div className="mt-6 h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="46%" outerRadius={106} innerRadius={0} label>
-                  {pieData.map((entry, index) => (
-                    <Cell key={entry.name} fill={pieColors[index % pieColors.length]} />
-                  ))}
-                </Pie>
+              <BarChart data={hourSeries} barGap={10}>
+                <CartesianGrid stroke="var(--color-chart-grid)" strokeDasharray="3 3" />
+                <XAxis dataKey="filiere" tick={{ fill: 'var(--color-chart-tick)', fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: 'var(--color-chart-tick)', fontSize: 12 }} axisLine={false} tickLine={false} />
                 <Tooltip
-                  cursor={{ fill: 'rgba(36, 99, 255, 0.08)' }}
                   contentStyle={{
-                    borderRadius: 16,
-                    border: '1px solid rgba(148, 163, 184, 0.24)',
-                    boxShadow: '0 18px 40px rgba(15, 23, 42, 0.14)',
-                    background: 'rgba(255, 255, 255, 0.96)',
+                    background: 'var(--color-chart-tooltip-bg)',
+                    border: '1px solid var(--color-chart-tooltip-border)',
+                    borderRadius: '18px',
+                    color: 'var(--color-chart-tooltip-text)',
                   }}
                 />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </DirectorSurface>
-
-        <DirectorSurface className="p-6">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-[20px] font-semibold text-[#18243a]">Progression par Filière</h2>
-            <div className="flex items-center gap-4 text-xs font-semibold text-[#697891]">
-              <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-[#7c4ded]" />Validé</span>
-              <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-[#d9dee8]" />En attente</span>
-            </div>
-          </div>
-          <div className="mt-6 h-[320px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={overview?.filiere_progress || []} barCategoryGap={32}>
-                <CartesianGrid stroke="#edf2f8" vertical={false} />
-                <XAxis dataKey="filiere" tick={{ fill: '#7a879b', fontSize: 13 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: '#7a879b', fontSize: 13 }} axisLine={false} tickLine={false} />
-                <Tooltip />
-                <Bar dataKey="validated_percent" stackId="a" fill="#7c4ded" radius={[10, 10, 0, 0]} />
-                <Bar dataKey="pending_percent" stackId="a" fill="#e6eaf2" radius={[10, 10, 0, 0]} />
+                <Bar dataKey="completed_hours" radius={[10, 10, 0, 0]} fill="var(--color-chart-line)" name="Realise" />
+                <Bar dataKey="planned_hours" radius={[10, 10, 0, 0]} fill="var(--color-primary-strong)" name="Planifie" />
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </DirectorSurface>
+        </PremiumCard>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-2">
-        <DirectorSurface className="p-6">
-          <div className="flex items-center justify-between gap-3">
+      <div className="grid gap-5 xl:grid-cols-12">
+        <PremiumCard className="xl:col-span-4" hover={false}>
+          <div className="flex items-center justify-between gap-4">
             <div>
-              <h2 className="text-[20px] font-semibold text-[#18243a]">Heures par filière</h2>
-              <p className="mt-2 text-[15px] text-[#6b7a92]">
-                Vision consolidée des heures prévues et réellement exécutées par département.
-              </p>
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--color-text-subtle)]">Top formateurs</p>
+              <h2 className="mt-2 text-2xl font-bold tracking-tight text-[var(--color-text-soft)]">Classement de performance</h2>
             </div>
+            <BarChart3 className="h-6 w-6 text-[var(--color-primary)]" />
           </div>
-          <div className="mt-6 h-[320px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={overview?.hours_by_filiere || []} barCategoryGap={18}>
-                <CartesianGrid stroke="#edf2f8" vertical={false} />
-                <XAxis dataKey="filiere" tick={{ fill: '#7a879b', fontSize: 12 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: '#7a879b', fontSize: 12 }} axisLine={false} tickLine={false} />
-                <Tooltip />
-                <Bar dataKey="planned_hours" fill="#d8dce7" radius={[8, 8, 0, 0]} />
-                <Bar dataKey="completed_hours" fill="#4f35f2" radius={[8, 8, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </DirectorSurface>
 
-        <DirectorSurface className="p-6">
-          <div>
-            <h2 className="text-[20px] font-semibold text-[#18243a]">Classement formateurs</h2>
-            <p className="mt-2 text-[15px] text-[#6b7a92]">
-              Classement combinant l’exécution réelle et les résultats questionnaire pour prioriser l’accompagnement.
-            </p>
-          </div>
-          <div className="mt-6 space-y-4">
-            {(overview?.trainer_ranking || []).length ? (
-              overview.trainer_ranking.map((trainer) => (
-                <div key={trainer.id} className="rounded-[18px] border border-[#dde4ef] px-4 py-4">
-                  <div className="flex items-start justify-between gap-4">
+          <div className="mt-6 space-y-3">
+            {ranking.map((row) => (
+              <div key={row.id} className="hover-card rounded-2xl border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface-strong)_74%,transparent)] px-4 py-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <Avatar name={row.nom} size={40} />
                     <div>
-                      <p className="text-[16px] font-semibold text-[#17233a]">
-                        #{trainer.rank} {trainer.nom}
-                      </p>
-                      <p className="mt-1 text-sm text-[#7a869b]">{trainer.specialite || 'Spécialité non définie'}</p>
+                      <p className="text-sm font-semibold text-[var(--color-text-soft)]">{row.rank}. {row.nom}</p>
+                      <p className="mt-1 text-sm text-[var(--color-text-muted)]">{row.specialite || 'Specialite non definie'}</p>
                     </div>
-                    <span className="rounded-full bg-[#eef3ff] px-3 py-1 text-sm font-semibold text-[#315cf0]">
-                      {trainer.score}
-                    </span>
                   </div>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-[14px] bg-[#f8fbff] px-3 py-3">
-                      <p className="text-xs uppercase tracking-[0.08em] text-[#8a98ad]">Exécution</p>
-                      <p className="mt-2 text-[17px] font-semibold text-[#17233a]">
-                        {Math.round(trainer.completed_hours)}h / {Math.round(trainer.planned_hours)}h
-                      </p>
-                    </div>
-                    <div className="rounded-[14px] bg-[#f8fbff] px-3 py-3">
-                      <p className="text-xs uppercase tracking-[0.08em] text-[#8a98ad]">Questionnaire</p>
-                      <p className="mt-2 text-[17px] font-semibold text-[#17233a]">
-                        {trainer.questionnaire_percentage !== null ? `${Math.round(trainer.questionnaire_percentage)}%` : 'En attente'}
-                      </p>
-                    </div>
+                  <div className="rounded-2xl bg-[var(--color-primary-soft)] px-3 py-1.5 text-sm font-bold text-[var(--color-primary)]">
+                    {row.score}
                   </div>
                 </div>
-              ))
-            ) : (
-              <div className="rounded-[18px] border border-dashed border-[#dde4ef] px-4 py-10 text-center text-[#6b7a92]">
-                Aucun classement disponible pour le moment.
+                <div className="mt-4 flex items-center justify-between text-xs text-[var(--color-text-subtle)]">
+                  <span>{row.completed_hours}h realisees</span>
+                  <span>{row.questionnaire_percentage ?? 0}% eval.</span>
+                </div>
               </div>
-            )}
+            ))}
           </div>
-        </DirectorSurface>
+        </PremiumCard>
+
+        <PremiumCard className="xl:col-span-4" hover={false}>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--color-text-subtle)]">Modules a surveiller</p>
+              <h2 className="mt-2 text-2xl font-bold tracking-tight text-[var(--color-text-soft)]">Best et worst performers</h2>
+            </div>
+            <BookOpen className="h-6 w-6 text-[var(--color-primary)]" />
+          </div>
+
+          <div className="mt-6 grid gap-4">
+            <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/8 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-300">Top modules</p>
+              <div className="mt-3 space-y-3">
+                {bestModules.map((module) => (
+                  <div key={`best-${module.id}`} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="text-[var(--color-text-soft)]">{module.intitule}</span>
+                    <span className="rounded-full bg-emerald-500/14 px-3 py-1 text-emerald-200">{formatPercent(module.completion_rate)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-rose-500/20 bg-rose-500/8 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-rose-300">Modules critiques</p>
+              <div className="mt-3 space-y-3">
+                {worstModules.map((module) => (
+                  <div key={`worst-${module.id}`} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="text-[var(--color-text-soft)]">{module.intitule}</span>
+                    <span className="rounded-full bg-rose-500/14 px-3 py-1 text-rose-200">{formatPercent(module.completion_rate)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </PremiumCard>
+
+        <PremiumCard className="xl:col-span-4" hover={false}>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--color-text-subtle)]">Activite recente</p>
+              <h2 className="mt-2 text-2xl font-bold tracking-tight text-[var(--color-text-soft)]">Signal faible et traces</h2>
+            </div>
+            <Clock3 className="h-6 w-6 text-[var(--color-primary)]" />
+          </div>
+
+          <div className="mt-6 space-y-3">
+            {recentActivities.map((activity) => (
+              <div key={activity.id} className="rounded-2xl border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface-strong)_74%,transparent)] px-4 py-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-[var(--color-text-soft)]">{activity.action_label}</p>
+                    <p className="mt-1 text-sm leading-6 text-[var(--color-text-muted)]">{activity.action_description}</p>
+                  </div>
+                  <DirectorStatusPill status={activity.action_tone === 'success' ? 'approved' : activity.action_tone === 'warning' ? 'revision' : 'pending'} />
+                </div>
+                <p className="mt-3 text-xs uppercase tracking-[0.16em] text-[var(--color-text-subtle)]">{formatRelativeDate(activity.created_at)}</p>
+              </div>
+            ))}
+          </div>
+        </PremiumCard>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-2">
-        <DirectorSurface className="p-6">
-          <h2 className="text-[20px] font-semibold text-[#18243a]">Modules à surveiller</h2>
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
-            <div className="rounded-[20px] border border-[#e7edf6] bg-[#f9fbff] p-4">
-              <p className="text-sm font-semibold uppercase tracking-[0.08em] text-[#6b7a92]">Meilleurs modules</p>
-              <div className="mt-4 space-y-4">
-                {(overview?.module_highlights?.best || []).map((module) => (
-                  <div key={`best-${module.id}`} className="rounded-[16px] bg-white px-4 py-4">
-                    <p className="text-[15px] font-semibold text-[#17233a]">{module.code} - {module.intitule}</p>
-                    <p className="mt-1 text-sm text-[#7a869b]">{module.formateur_nom}</p>
-                    <p className="mt-3 text-sm font-semibold text-[#16a34a]">{module.progress_percent}% complété</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-[20px] border border-[#e7edf6] bg-[#fff8f8] p-4">
-              <p className="text-sm font-semibold uppercase tracking-[0.08em] text-[#6b7a92]">Modules en retard</p>
-              <div className="mt-4 space-y-4">
-                {(overview?.module_highlights?.worst || []).map((module) => (
-                  <div key={`worst-${module.id}`} className="rounded-[16px] bg-white px-4 py-4">
-                    <p className="text-[15px] font-semibold text-[#17233a]">{module.code} - {module.intitule}</p>
-                    <p className="mt-1 text-sm text-[#7a869b]">{module.formateur_nom}</p>
-                    <p className="mt-3 text-sm font-semibold text-[#d14343]">{module.progress_percent}% complété</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </DirectorSurface>
-
-        <DirectorSurface className="p-6">
-          <h2 className="text-[20px] font-semibold text-[#18243a]">Analyse questionnaires</h2>
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
-            <div className="rounded-[18px] border border-[#e7edf6] bg-[#f9fbff] px-4 py-4">
-              <p className="text-xs uppercase tracking-[0.08em] text-[#8a98ad]">Couverture</p>
-              <p className="mt-2 text-[34px] font-semibold leading-none text-[#17233a]">
-                {overview?.questionnaire_analytics?.completion_rate ?? 0}%
-              </p>
-              <p className="mt-2 text-sm text-[#6b7a92]">
-                {overview?.questionnaire_analytics?.completed_questionnaires ?? 0} réponses sur {overview?.questionnaire_analytics?.assigned_questionnaires ?? 0}
-              </p>
-            </div>
-            <div className="rounded-[18px] border border-[#e7edf6] bg-[#f9fbff] px-4 py-4">
-              <p className="text-xs uppercase tracking-[0.08em] text-[#8a98ad]">Moyenne</p>
-              <p className="mt-2 text-[34px] font-semibold leading-none text-[#17233a]">
-                {Math.round(overview?.questionnaire_analytics?.average_percentage ?? 0)}%
-              </p>
-              <p className="mt-2 text-sm text-[#6b7a92]">Score moyen de satisfaction et d’évaluation.</p>
-            </div>
-          </div>
-
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
-            <div className="rounded-[20px] border border-[#e7edf6] bg-[#f9fbff] p-4">
-              <p className="text-sm font-semibold uppercase tracking-[0.08em] text-[#6b7a92]">Top modules questionnaire</p>
-              <div className="mt-4 space-y-4">
-                {(overview?.questionnaire_analytics?.top_modules || []).map((module) => (
-                  <div key={`questionnaire-top-${module.id}`} className="rounded-[16px] bg-white px-4 py-4">
-                    <p className="text-[15px] font-semibold text-[#17233a]">{module.code} - {module.intitule}</p>
-                    <p className="mt-1 text-sm text-[#7a869b]">{module.response_count} réponse(s)</p>
-                    <p className="mt-3 text-sm font-semibold text-[#16a34a]">{Math.round(module.average_percentage)}%</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="rounded-[20px] border border-[#e7edf6] bg-[#fff8f8] p-4">
-              <p className="text-sm font-semibold uppercase tracking-[0.08em] text-[#6b7a92]">Modules à retravailler</p>
-              <div className="mt-4 space-y-4">
-                {(overview?.questionnaire_analytics?.bottom_modules || []).map((module) => (
-                  <div key={`questionnaire-bottom-${module.id}`} className="rounded-[16px] bg-white px-4 py-4">
-                    <p className="text-[15px] font-semibold text-[#17233a]">{module.code} - {module.intitule}</p>
-                    <p className="mt-1 text-sm text-[#7a869b]">{module.response_count} réponse(s)</p>
-                    <p className="mt-3 text-sm font-semibold text-[#d14343]">{Math.round(module.average_percentage)}%</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </DirectorSurface>
+      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+        <PremiumMetricCard
+          icon={CheckCircle2}
+          label="Progression globale"
+          value={formatPercent(overview?.global_performance?.completion_rate)}
+          meta="Heures executees"
+          tone="brand"
+        />
+        <PremiumMetricCard
+          icon={Clock3}
+          label="Couverture planning"
+          value={formatPercent(overview?.global_performance?.planned_coverage_rate)}
+          meta="Heures planifiees"
+          tone="amber"
+        />
+        <PremiumMetricCard
+          icon={Users2}
+          label="Taux questionnaires"
+          value={formatPercent(overview?.global_performance?.questionnaire_completion_rate)}
+          meta="Modules avec retour"
+          tone="default"
+        />
+        <PremiumMetricCard
+          icon={BookOpen}
+          label="Note moyenne"
+          value={overview?.global_performance?.questionnaire_average !== null ? `${Math.round(overview?.global_performance?.questionnaire_average || 0)}%` : '--'}
+          meta="Qualite pedagogique"
+          tone="rose"
+        />
       </div>
-
-      <DirectorSurface className="p-6">
-        <h2 className="text-[20px] font-semibold text-[#18243a]">Activités Récentes</h2>
-        <div className="mt-5 overflow-x-auto">
-          <table className="min-w-full border-separate border-spacing-y-3">
-            <thead>
-              <tr className="text-left text-sm uppercase tracking-[0.12em] text-[#7c8698]">
-                <th className="px-3 py-2">Formateur</th>
-                <th className="px-3 py-2">Module</th>
-                <th className="px-3 py-2">Action</th>
-                <th className="px-3 py-2">Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(overview?.recent_activities || []).map((activity) => (
-                <tr key={activity.id} className="rounded-[18px] bg-white">
-                  <td className="px-3 py-4 text-[15px] font-medium text-[#18243a]">{activity.formateur_nom || '-'}</td>
-                  <td className="px-3 py-4 text-[15px] text-[#2f3d55]">{activity.module_intitule || '-'}</td>
-                  <td className="px-3 py-4">
-                    <DirectorStatusPill status={activity.action_tone}>{activity.action_label}</DirectorStatusPill>
-                  </td>
-                  <td className="px-3 py-4 text-[15px] text-[#6b7a92]">{formatRelativeDate(activity.created_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </DirectorSurface>
     </div>
   );
 }

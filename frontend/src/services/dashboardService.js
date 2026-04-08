@@ -1,6 +1,7 @@
 import { apiRequest } from './api';
 
 const DASHBOARD_BASE = '/dashboard';
+const DASHBOARD_CACHE_VERSION = 'v2';
 
 const DashboardService = {
   getStats() {
@@ -9,7 +10,11 @@ const DashboardService = {
         url: `${DASHBOARD_BASE}?action=stats`,
         method: 'get',
       },
-      { dedupeKey: 'dashboard:stats', cacheKey: 'dashboard:stats', cacheTtlMs: 15000 },
+      {
+        dedupeKey: `dashboard:stats:${DASHBOARD_CACHE_VERSION}`,
+        cacheKey: `dashboard:stats:${DASHBOARD_CACHE_VERSION}`,
+        cacheTtlMs: 15000,
+      },
     );
   },
 
@@ -20,8 +25,8 @@ const DashboardService = {
         method: 'get',
       },
       {
-        dedupeKey: 'dashboard:director-overview',
-        cacheKey: 'dashboard:director-overview',
+        dedupeKey: `dashboard:director-overview:${DASHBOARD_CACHE_VERSION}`,
+        cacheKey: `dashboard:director-overview:${DASHBOARD_CACHE_VERSION}`,
         cacheTtlMs: 15000,
       },
     );
@@ -35,8 +40,8 @@ const DashboardService = {
         params: typeof week === 'number' ? { week } : undefined,
       },
       {
-        dedupeKey: `dashboard:trainer-overview:${week ?? 'current'}`,
-        cacheKey: `dashboard:trainer-overview:${week ?? 'current'}`,
+        dedupeKey: `dashboard:trainer-overview:${DASHBOARD_CACHE_VERSION}:${week ?? 'current'}`,
+        cacheKey: `dashboard:trainer-overview:${DASHBOARD_CACHE_VERSION}:${week ?? 'current'}`,
         cacheTtlMs: 15000,
       },
     );

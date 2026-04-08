@@ -6,18 +6,18 @@ import { FormateurEmptyBlock, FormateurPanel, FormateurSectionHeader, FormateurS
 
 function statusClasses(status) {
   if (status === 'planned') {
-    return 'bg-[#eef4ff] text-[#315cf0]';
+    return 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-200';
   }
 
   if (status === 'validated' || status === 'approved') {
-    return 'bg-[#e8f9ea] text-[#18a34a]';
+    return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200';
   }
 
   if (status === 'rejected') {
-    return 'bg-[#fff1f1] text-[#d14343]';
+    return 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-200';
   }
 
-  return 'bg-[#fff4e9] text-[#ff6f1f]';
+  return 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-200';
 }
 
 function formatDate(value) {
@@ -96,42 +96,45 @@ export default function MesDemandes() {
   if (loading) {
     return (
       <div className="flex min-h-[55vh] items-center justify-center">
-        <Spinner className="h-11 w-11 border-[#dbe3ef] border-t-[#1f57ff]" />
+        <Spinner className="h-11 w-11 border-slate-200 border-t-blue-600 dark:border-white/10 dark:border-t-blue-400" />
       </div>
     );
   }
 
   return (
     <div className="space-y-6 pb-8">
-      <div className="rounded-[28px] bg-[#f7f9fd] px-6 py-7">
-        <h1 className="text-[22px] font-bold tracking-tight text-[#1f2a3d]">Demande de Modification</h1>
-        <p className="mt-2 text-[15px] text-[#75859c]">Demandez une modification de votre planning</p>
+      <div className="theme-card-muted rounded-[28px] border border-[var(--color-border)] px-6 py-7">
+        <h1 className="theme-text-primary text-[22px] font-bold tracking-tight">Demande de Modification</h1>
+        <p className="theme-text-muted mt-2 text-[15px]">Demandez une modification de votre planning</p>
       </div>
 
       {error ? (
-        <FormateurPanel className="px-6 py-5 text-[15px] font-semibold text-[#b54545]">{error}</FormateurPanel>
+        <FormateurPanel className="theme-status-danger px-6 py-5 text-[15px] font-semibold">{error}</FormateurPanel>
       ) : null}
 
       {success ? (
-        <FormateurPanel className="border-[#bfe8cb] bg-[#effcf3] px-6 py-5 text-[15px] font-semibold text-[#1b7b48]">
+        <FormateurPanel className="theme-status-success px-6 py-5 text-[15px] font-semibold">
           {success}
         </FormateurPanel>
       ) : null}
 
       <div className="grid gap-4 xl:grid-cols-3">
         <FormateurStatCard
+          className="hover-card"
           icon={() => null}
           iconClassName="hidden"
           label="Demandes ce mois"
           value={overview?.summary?.total_this_month || 0}
         />
         <FormateurStatCard
+          className="hover-card"
           icon={() => null}
           iconClassName="hidden"
           label="Approuvees"
           value={overview?.summary?.approved_count || 0}
         />
         <FormateurStatCard
+          className="hover-card"
           icon={() => null}
           iconClassName="hidden"
           label="En attente"
@@ -143,11 +146,11 @@ export default function MesDemandes() {
         <FormateurSectionHeader title="Nouvelle demande" />
         <form className="mt-6 space-y-5" onSubmit={handleSubmit}>
           <label className="block">
-            <span className="mb-2 block text-[15px] font-medium text-[#334761]">Module concerne</span>
+            <span className="theme-text-primary mb-2 block text-[15px] font-medium">Module concerne</span>
             <select
               value={formData.module_id}
               onChange={handleChange('module_id')}
-              className="h-12 w-full rounded-[16px] border border-[#e7ecf5] bg-[#f7f9fd] px-4 text-[14px] text-[#223046] outline-none"
+              className="theme-input theme-focus-ring h-12 w-full rounded-[16px] border px-4 text-[14px] outline-none"
             >
               <option value="">Selectionnez un module</option>
               {(overview?.modules || []).map((module) => (
@@ -159,40 +162,40 @@ export default function MesDemandes() {
           </label>
 
           <label className="block">
-            <span className="mb-2 block text-[15px] font-medium text-[#334761]">Groupe</span>
+            <span className="theme-text-primary mb-2 block text-[15px] font-medium">Groupe</span>
             <input
               value={formData.groupe_code}
               onChange={handleChange('groupe_code')}
               placeholder="Ex: S13"
-              className="h-12 w-full rounded-[16px] border border-[#e7ecf5] bg-[#f7f9fd] px-4 text-[14px] text-[#223046] outline-none"
+              className="theme-input theme-focus-ring h-12 w-full rounded-[16px] border px-4 text-[14px] outline-none"
             />
           </label>
 
           <label className="block">
-            <span className="mb-2 block text-[15px] font-medium text-[#334761]">Semaine</span>
+            <span className="theme-text-primary mb-2 block text-[15px] font-medium">Semaine</span>
             <input
               value={formData.semaine}
               onChange={handleChange('semaine')}
               placeholder="Ex: Semaine S13"
-              className="h-12 w-full rounded-[16px] border border-[#e7ecf5] bg-[#f7f9fd] px-4 text-[14px] text-[#223046] outline-none"
+              className="theme-input theme-focus-ring h-12 w-full rounded-[16px] border px-4 text-[14px] outline-none"
             />
           </label>
 
           <label className="block">
-            <span className="mb-2 block text-[15px] font-medium text-[#334761]">Raison de la modification</span>
+            <span className="theme-text-primary mb-2 block text-[15px] font-medium">Raison de la modification</span>
             <textarea
               rows={4}
               value={formData.reason}
               onChange={handleChange('reason')}
               placeholder="Expliquez la raison de votre demande..."
-              className="w-full rounded-[16px] border border-[#e7ecf5] bg-[#f7f9fd] px-4 py-3 text-[14px] text-[#223046] outline-none"
+              className="theme-input theme-focus-ring w-full rounded-[16px] border px-4 py-3 text-[14px] outline-none"
             />
           </label>
 
           <button
             type="submit"
             disabled={saving || !formData.module_id || !formData.reason}
-            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-[14px] bg-gradient-to-r from-[#b55af2] to-[#ac56f1] text-[15px] font-semibold text-white shadow-[0_18px_32px_rgba(176,89,242,0.25)] transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-70"
+            className="hover-action inline-flex h-12 w-full items-center justify-center gap-2 rounded-[14px] bg-gradient-to-r from-violet-500 to-fuchsia-600 text-[15px] font-semibold text-white shadow-sm transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-70 dark:shadow-none"
           >
             <SendHorizontal className="h-4 w-4" />
             {saving ? 'Envoi en cours...' : 'Envoyer la demande'}
@@ -205,17 +208,20 @@ export default function MesDemandes() {
         <div className="mt-6 space-y-4">
           {overview?.history?.length ? (
             overview.history.map((item) => (
-              <div key={item.id} className="flex flex-col gap-4 rounded-[20px] border border-[#edf1f6] bg-white px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
+              <div key={item.id} className="hover-row flex flex-col gap-4 rounded-[20px] border border-[var(--color-border)] bg-[var(--color-surface-strong)] px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
-                  <p className="text-[16px] font-bold text-[#1d2a3f]">
+                  <p className="theme-text-primary text-[16px] font-bold">
                     {item.module_code} - {item.module_intitule}
                   </p>
-                  <p className="mt-1 text-[14px] text-[#73839c]">
+                  <p className="theme-text-muted mt-1 text-[14px]">
                     {formatDate(item.created_at)} • {item.semaine}
                   </p>
-                  <p className="mt-3 text-[15px] text-[#334761]">{item.reason}</p>
+                  <p className="theme-text-primary mt-3 text-[15px]">{item.reason}</p>
                 </div>
-                <span className={`inline-flex shrink-0 rounded-full px-3 py-1 text-[13px] font-semibold ${statusClasses(item.status)}`}>
+                <span
+                  className={`hover-badge inline-flex shrink-0 rounded-full px-3 py-1 text-[13px] font-semibold ${statusClasses(item.status)}`}
+                  data-tooltip={item.status === 'planned' ? 'Planifiée pour arbitrage' : (item.status === 'validated' || item.status === 'approved' ? 'Demande acceptée' : (item.status === 'rejected' ? 'Demande refusée' : 'En attente de revue'))}
+                >
                   {item.status === 'planned'
                     ? 'Planifie'
                     : item.status === 'validated' || item.status === 'approved'

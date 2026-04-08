@@ -1,3 +1,5 @@
+import { getStoredUser } from '../utils/authStorage';
+
 export const THEME_STORAGE_KEY = 'theme';
 export const THEME_SWITCH_CLASS = 'theme-switching';
 
@@ -31,7 +33,7 @@ export function readStoredTheme() {
   }
 }
 
-export function persistTheme(theme) {
+export function persistGuestTheme(theme) {
   if (typeof window === 'undefined' || !isTheme(theme)) {
     return;
   }
@@ -39,8 +41,27 @@ export function persistTheme(theme) {
   try {
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   } catch (error) {
-    // Ignore storage write failures.
   }
+}
+
+export function clearStoredTheme() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.removeItem(THEME_STORAGE_KEY);
+  } catch (error) {
+  }
+}
+
+export function readStoredUserTheme() {
+  const user = getStoredUser();
+  return isTheme(user?.theme_preference) ? user.theme_preference : null;
+}
+
+export function getBootstrapTheme() {
+  return readStoredTheme() || readStoredUserTheme() || getSystemTheme();
 }
 
 export function applyThemeToDocument(theme, options = {}) {
@@ -55,9 +76,13 @@ export function applyThemeToDocument(theme, options = {}) {
     root.classList.add(THEME_SWITCH_CLASS);
   }
 
-  root.dataset.theme = theme;
   root.classList.toggle('dark', theme === THEMES.DARK);
   root.style.colorScheme = theme;
+
+  const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+  if (themeColorMeta) {
+    themeColorMeta.setAttribute('content', theme === THEMES.DARK ? '#0f172a' : '#f5f7fb');
+  }
 
   if (withEffect && typeof window !== 'undefined') {
     window.setTimeout(() => {

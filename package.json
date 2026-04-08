@@ -1,0 +1,8 @@
+{
+  "name": "gestion-horaires-formateurs",
+  "private": true,
+  "scripts": {
+    "test": "./frontend/node_modules/.bin/vitest run --config vitest.config.mjs",
+    "test:e2e": "./frontend/node_modules/.bin/playwright test --config playwright.config.js"
+  }
+}

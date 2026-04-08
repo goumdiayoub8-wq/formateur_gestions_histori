@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<phpunit bootstrap="tests/bootstrap.php" colors="true" cacheDirectory=".phpunit.cache">
+<phpunit bootstrap="../tests/bootstrap.php" colors="true" cacheDirectory=".phpunit.cache">
+  <php>
+    <ini name="memory_limit" value="768M"/>
+  </php>
   <testsuites>
     <testsuite name="Backend">
-      <directory>tests</directory>
+      <directory suffix="Test.php">../tests</directory>
     </testsuite>
   </testsuites>
 </phpunit>

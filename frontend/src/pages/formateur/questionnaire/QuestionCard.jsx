@@ -32,7 +32,7 @@ const ratingOptions = [
   },
 ];
 
-function QuestionChoices({ question, selectedValue, disabled, onChange }) {
+function QuestionChoices({ question, questionIndex, selectedValue, disabled, onChange }) {
   if (question?.type === 'text') {
     return (
       <motion.textarea
@@ -42,6 +42,7 @@ function QuestionChoices({ question, selectedValue, disabled, onChange }) {
         disabled={disabled}
         value={selectedValue || ''}
         onChange={(event) => onChange(event.target.value)}
+        aria-label={getQuestionTitle(question, questionIndex)}
         placeholder="Partagez votre reponse ici..."
         className="min-h-[144px] w-full rounded-[28px] border border-white/70 bg-white/70 px-5 py-4 text-[15px] text-slate-800 outline-none backdrop-blur-xl transition focus:border-[#3b82f6] focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
       />
@@ -174,6 +175,7 @@ export default function QuestionCard({
             <div className="mt-8">
               <QuestionChoices
                 question={currentQuestion}
+                questionIndex={currentQuestionIndex}
                 selectedValue={selectedValue}
                 disabled={disabled}
                 onChange={onChange}

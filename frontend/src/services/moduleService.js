@@ -18,11 +18,28 @@ const ModuleService = {
     );
   },
 
-  get(id) {
-    return apiRequest({
-      url: `${MODULES_BASE}/${id}`,
-      method: 'get',
-    });
+  listPaginated({ page = 1, limit = 5, search = '', ...filters } = {}) {
+    const normalizedSearch = search.trim();
+    const params = {
+      page,
+      limit,
+      ...filters,
+      ...(normalizedSearch ? { search: normalizedSearch } : {}),
+    };
+
+    return apiRequest(
+      {
+        url: MODULES_BASE,
+        method: 'get',
+        params,
+      },
+      {
+        raw: true,
+        dedupeKey: `modules:paginated:${JSON.stringify(params)}`,
+        cacheKey: `modules:paginated:${JSON.stringify(params)}`,
+        cacheTtlMs: 10000,
+      },
+    );
   },
 
   create(payload) {
@@ -80,17 +97,24 @@ const ModuleService = {
     );
   },
 
-  getProgressList(filters = {}) {
+  getProgressListPage({ page = 1, limit = 5, ...filters } = {}) {
+    const params = {
+      page,
+      limit,
+      ...filters,
+    };
+
     return apiRequest(
       {
         url: `${MODULES_BASE}?action=progress-list`,
         method: 'get',
-        params: filters,
+        params,
       },
       {
-        dedupeKey: `modules:progress-list:${JSON.stringify(filters)}`,
-        cacheKey: `modules:progress-list:${JSON.stringify(filters)}`,
-        cacheTtlMs: 15000,
+        raw: true,
+        dedupeKey: `modules:progress-list-page:${JSON.stringify(params)}`,
+        cacheKey: `modules:progress-list-page:${JSON.stringify(params)}`,
+        cacheTtlMs: 10000,
       },
     );
   },

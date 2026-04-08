@@ -9,6 +9,42 @@ class AffectationRepository
         $this->db = $db;
     }
 
+    private function applyFilters(string &$sql, array &$params, array $filters = []): void
+    {
+        if (!empty($filters['formateur_id'])) {
+            $sql .= ' AND a.formateur_id = :formateur_id';
+            $params['formateur_id'] = intval($filters['formateur_id']);
+        }
+
+        if (!empty($filters['module_id'])) {
+            $sql .= ' AND a.module_id = :module_id';
+            $params['module_id'] = intval($filters['module_id']);
+        }
+
+        if (!empty($filters['annee'])) {
+            $sql .= ' AND a.annee = :annee';
+            $params['annee'] = intval($filters['annee']);
+        }
+
+        $search = trim((string) ($filters['search'] ?? $filters['q'] ?? ''));
+
+        if ($search !== '') {
+            $sql .= ' AND (
+                f.nom LIKE :search_formateur_nom
+                OR f.email LIKE :search_formateur_email
+                OR m.intitule LIKE :search_module_intitule
+                OR m.filiere LIKE :search_module_filiere
+                OR COALESCE(m.code, "") LIKE :search_module_code
+            )';
+            $searchValue = '%' . $search . '%';
+            $params['search_formateur_nom'] = $searchValue;
+            $params['search_formateur_email'] = $searchValue;
+            $params['search_module_intitule'] = $searchValue;
+            $params['search_module_filiere'] = $searchValue;
+            $params['search_module_code'] = $searchValue;
+        }
+    }
+
     public function all(array $filters = []): array
     {
         $sql = 'SELECT
@@ -29,21 +65,7 @@ class AffectationRepository
                 INNER JOIN modules m ON m.id = a.module_id
                 WHERE 1 = 1';
         $params = [];
-
-        if (!empty($filters['formateur_id'])) {
-            $sql .= ' AND a.formateur_id = :formateur_id';
-            $params['formateur_id'] = intval($filters['formateur_id']);
-        }
-
-        if (!empty($filters['module_id'])) {
-            $sql .= ' AND a.module_id = :module_id';
-            $params['module_id'] = intval($filters['module_id']);
-        }
-
-        if (!empty($filters['annee'])) {
-            $sql .= ' AND a.annee = :annee';
-            $params['annee'] = intval($filters['annee']);
-        }
+        $this->applyFilters($sql, $params, $filters);
 
         $sql .= ' ORDER BY a.annee DESC, f.nom, m.intitule';
 
@@ -51,6 +73,65 @@ class AffectationRepository
         $stmt->execute($params);
 
         return $stmt->fetchAll();
+    }
+
+    public function paginate(int $page = 1, int $limit = 5, array $filters = []): array
+    {
+        $normalizedLimit = max(1, min(100, $limit));
+        $countSql = 'SELECT COUNT(*)
+            FROM affectations a
+            INNER JOIN formateurs f ON f.id = a.formateur_id
+            INNER JOIN modules m ON m.id = a.module_id
+            WHERE 1 = 1';
+        $countParams = [];
+        $this->applyFilters($countSql, $countParams, $filters);
+
+        $countStmt = $this->db->prepare($countSql);
+        $countStmt->execute($countParams);
+
+        $totalItems = intval($countStmt->fetchColumn() ?: 0);
+        $totalPages = max(1, (int) ceil($totalItems / $normalizedLimit));
+        $currentPage = max(1, min($page, $totalPages));
+        $offset = ($currentPage - 1) * $normalizedLimit;
+
+        $sql = 'SELECT
+                    a.id,
+                    a.formateur_id,
+                    a.module_id,
+                    a.annee,
+                    a.created_at,
+                    f.nom AS formateur_nom,
+                    f.email AS formateur_email,
+                    m.code AS module_code,
+                    m.intitule AS module_intitule,
+                    m.filiere,
+                    m.semestre,
+                    m.volume_horaire,
+                    m.has_efm
+                FROM affectations a
+                INNER JOIN formateurs f ON f.id = a.formateur_id
+                INNER JOIN modules m ON m.id = a.module_id
+                WHERE 1 = 1';
+        $params = [];
+        $this->applyFilters($sql, $params, $filters);
+        $sql .= ' ORDER BY a.annee DESC, f.nom, m.intitule
+                  LIMIT :limit OFFSET :offset';
+
+        $stmt = $this->db->prepare($sql);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue(':' . $key, $value);
+        }
+        $stmt->bindValue(':limit', $normalizedLimit, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return [
+            'data' => $stmt->fetchAll(),
+            'total_items' => $totalItems,
+            'total_pages' => $totalPages,
+            'current_page' => $currentPage,
+            'limit' => $normalizedLimit,
+        ];
     }
 
     public function find(int $id): ?array

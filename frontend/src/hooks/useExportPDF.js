@@ -52,8 +52,8 @@ function getPdfDependencies() {
 
 function getExcelDependencies() {
   if (!excelDependenciesPromise) {
-    excelDependenciesPromise = import('exceljs').then((module) => ({
-      ExcelJS: module.default || module,
+    excelDependenciesPromise = import('xlsx').then((module) => ({
+      XLSX: module.default || module,
     }));
   }
 
@@ -246,15 +246,37 @@ function downloadBlob(blob, filename) {
   URL.revokeObjectURL(url);
 }
 
-function fitWorksheetToImage(worksheet, widthPx, heightPx) {
-  const columnCount = Math.max(20, Math.ceil(widthPx / 64));
-  const rowCount = Math.max(30, Math.ceil(heightPx / 20));
+function buildTrainerWorksheetRows({ trainer, weekNumber, weekRange, academicYearLabel, generatedAtLabel }) {
+  const rows = [
+    ['Planning formateur'],
+    ['Formateur', trainer.name],
+    ['Specialite', trainer.specialite || '-'],
+    ['Annee academique', academicYearLabel || '-'],
+    ['Semaine', weekNumber || 'courante'],
+    ['Periode', weekRange?.label || '-'],
+    ['Heures hebdomadaires', trainer.weeklyHours],
+    ['Genere le', generatedAtLabel],
+    [],
+    ['Jour', 'Horaire', 'Module', 'Code module', 'Groupe', 'Salle', 'Tache'],
+  ];
 
-  worksheet.columns = Array.from({ length: columnCount }, () => ({ width: 10 }));
+  trainer.entries.forEach((entry) => {
+    rows.push([
+      entry.dayLabel,
+      entry.timeLabel,
+      entry.moduleLabel,
+      entry.moduleCode || '-',
+      entry.groupLabel,
+      entry.roomLabel,
+      entry.taskLabel,
+    ]);
+  });
 
-  for (let rowIndex = 1; rowIndex <= rowCount; rowIndex += 1) {
-    worksheet.getRow(rowIndex).height = 15;
+  if (trainer.entries.length === 0) {
+    rows.push(['Aucun creneau disponible', '', '', '', '', '', '']);
   }
+
+  return rows;
 }
 
 function normalizeTrainer(trainer) {
@@ -394,50 +416,38 @@ export default function useExportPDF() {
         dateStyle: 'short',
         timeStyle: 'short',
       });
-      const logoSrc = `${window.location.origin}/logo192.png`;
-      const { ExcelJS } = await getExcelDependencies();
+      const { XLSX } = await getExcelDependencies();
       const normalizedTrainers = (Array.isArray(trainers) ? trainers : []).map(normalizeTrainer);
-      const workbook = new ExcelJS.Workbook();
-      workbook.creator = 'CMC Casablanca';
-      workbook.created = new Date();
+      const workbook = XLSX.utils.book_new();
 
       for (let index = 0; index < normalizedTrainers.length; index += 1) {
         const trainer = normalizedTrainers[index];
         setExportStage('rendering');
-        const canvas = await renderTrainerCanvas({
+        const worksheetRows = buildTrainerWorksheetRows({
           trainer,
           weekNumber,
           weekRange,
           academicYearLabel,
           generatedAtLabel,
-          logoSrc,
         });
-
         setExportStage('assembling');
-        const imageId = workbook.addImage({
-          base64: canvas.toDataURL('image/png'),
-          extension: 'png',
-        });
         const safeTitle = (trainer.name || `Planning ${index + 1}`).slice(0, 31) || `Planning ${index + 1}`;
-        const worksheet = workbook.addWorksheet(safeTitle, {
-          views: [{ showGridLines: false }],
-          pageSetup: {
-            orientation: 'landscape',
-            paperSize: 9,
-            fitToPage: true,
-            fitToWidth: 1,
-            fitToHeight: 1,
-          },
-        });
-
-        fitWorksheetToImage(worksheet, canvas.width, canvas.height);
-        worksheet.addImage(imageId, {
-          tl: { col: 0, row: 0 },
-          ext: { width: canvas.width, height: canvas.height },
-          editAs: 'oneCell',
-        });
+        const worksheet = XLSX.utils.aoa_to_sheet(worksheetRows);
+        worksheet['!cols'] = [
+          { wch: 14 },
+          { wch: 18 },
+          { wch: 38 },
+          { wch: 16 },
+          { wch: 16 },
+          { wch: 16 },
+          { wch: 28 },
+        ];
+        XLSX.utils.book_append_sheet(workbook, worksheet, safeTitle);
       }
-      const buffer = await workbook.xlsx.writeBuffer();
+      const buffer = XLSX.write(workbook, {
+        bookType: 'xlsx',
+        type: 'array',
+      });
       const blob = new Blob([buffer], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       });

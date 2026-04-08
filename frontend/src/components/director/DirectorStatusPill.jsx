@@ -1,14 +1,14 @@
 import React from 'react';
 
 const toneClasses = {
-  pending: 'bg-[#fff4cb] text-[#c57b00]',
-  approved: 'bg-[#dffae8] text-[#169d4c]',
-  rejected: 'bg-[#ffe0e0] text-[#e3342f]',
-  revision: 'bg-[#fff0d8] text-[#d27a00]',
-  success: 'bg-[#dffae8] text-[#169d4c]',
-  danger: 'bg-[#ffe0e0] text-[#e3342f]',
-  warning: 'bg-[#fff4cb] text-[#c57b00]',
-  info: 'bg-[#e9f0ff] text-[#316cff]',
+  pending: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-200',
+  approved: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200',
+  rejected: 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-200',
+  revision: 'bg-orange-50 text-orange-700 dark:bg-orange-500/10 dark:text-orange-200',
+  success: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200',
+  danger: 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-200',
+  warning: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-200',
+  info: 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-200',
 };
 
 const labelMap = {

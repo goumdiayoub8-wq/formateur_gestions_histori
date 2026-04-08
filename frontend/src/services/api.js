@@ -4,6 +4,7 @@ import { getStoredToken } from '../utils/authStorage';
 const API_BASE = (import.meta.env.VITE_API_BASE || '/api').trim();
 const inFlightRequests = new Map();
 const responseCache = new Map();
+const SESSION_CACHE_PREFIX = 'api-cache:';
 
 function isAbsoluteUrl(url) {
   return /^https?:\/\//i.test(url);
@@ -125,14 +126,71 @@ function getCacheStorageKey(key, raw) {
   return `${key}::${raw ? 'raw' : 'picked'}`;
 }
 
+function canUseSessionStorage() {
+  return typeof window !== 'undefined' && typeof window.sessionStorage !== 'undefined';
+}
+
+function getSessionCacheKey(storageKey) {
+  return `${SESSION_CACHE_PREFIX}${storageKey}`;
+}
+
+function readSessionCachedValue(storageKey) {
+  if (!canUseSessionStorage()) {
+    return null;
+  }
+
+  try {
+    const serializedEntry = window.sessionStorage.getItem(getSessionCacheKey(storageKey));
+    if (!serializedEntry) {
+      return null;
+    }
+
+    const entry = JSON.parse(serializedEntry);
+    if (!entry || entry.expiresAt <= Date.now()) {
+      window.sessionStorage.removeItem(getSessionCacheKey(storageKey));
+      return null;
+    }
+
+    responseCache.set(storageKey, entry);
+    return entry.value;
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionCachedValue(storageKey, entry) {
+  if (!canUseSessionStorage()) {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(getSessionCacheKey(storageKey), JSON.stringify(entry));
+  } catch {
+    // Garde le cache memoire si besoin
+  }
+}
+
+function removeSessionCachedValue(storageKey) {
+  if (!canUseSessionStorage()) {
+    return;
+  }
+
+  try {
+    window.sessionStorage.removeItem(getSessionCacheKey(storageKey));
+  } catch {
+    // Le nettoyage peut echouer sans impact
+  }
+}
+
 function readCachedValue(storageKey) {
   const entry = responseCache.get(storageKey);
   if (!entry) {
-    return null;
+    return readSessionCachedValue(storageKey);
   }
 
   if (entry.expiresAt <= Date.now()) {
     responseCache.delete(storageKey);
+    removeSessionCachedValue(storageKey);
     return null;
   }
 
@@ -140,21 +198,44 @@ function readCachedValue(storageKey) {
 }
 
 function writeCachedValue(storageKey, value, ttlMs) {
-  responseCache.set(storageKey, {
+  const entry = {
     value,
     expiresAt: Date.now() + ttlMs,
-  });
+  };
+
+  responseCache.set(storageKey, entry);
+  writeSessionCachedValue(storageKey, entry);
 }
 
 export function invalidateApiCache(match = '') {
   if (!match) {
     responseCache.clear();
+    if (canUseSessionStorage()) {
+      try {
+        Object.keys(window.sessionStorage)
+          .filter((key) => key.startsWith(SESSION_CACHE_PREFIX))
+          .forEach((key) => window.sessionStorage.removeItem(key));
+      } catch {
+        // Le nettoyage peut echouer sans impact
+      }
+    }
     return;
   }
 
   for (const key of responseCache.keys()) {
     if (key.includes(match)) {
       responseCache.delete(key);
+      removeSessionCachedValue(key);
+    }
+  }
+
+  if (canUseSessionStorage()) {
+    try {
+      Object.keys(window.sessionStorage)
+        .filter((key) => key.startsWith(SESSION_CACHE_PREFIX) && key.includes(match))
+        .forEach((key) => window.sessionStorage.removeItem(key));
+    } catch {
+      // Le nettoyage peut echouer sans impact
     }
   }
 }
